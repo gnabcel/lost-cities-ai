@@ -5,6 +5,7 @@ An engine and self-play-trained bots for **Lost Cities** (classic 2-player editi
 Everything runs locally: the game engine is pure Python, and the bot is a 0.8M-parameter MLP (3 MB) trained on a single RTX 3070.
 
 **[▶ Play it in your browser](https://gnabcel.github.io/lost-cities-ai/web/)**: no install, the bot runs on your machine.
+**[How it works, illustrated](https://gnabcel.github.io/lost-cities-ai/how-it-works/)**: what the bot sees, how the search teaches it, and the measurements behind each step.
 
 ![Playing against the bot](docs/play.png)
 
@@ -111,6 +112,7 @@ One expert-iteration step (1000 self-play rounds with search on 7 CPU cores, the
 | `lost_cities/tracker.py` | Evaluates checkpoints (vs heuristic and head-to-head) → `runs/summary.json` |
 | `lost_cities/play_server.py`, `play/` | Web UI to play against the bot |
 | `web/` | Browser-only version: JavaScript engine, ONNX network, same UI |
+| `how-it-works/` | Illustrated explainer page (published with GitHub Pages) |
 | `dashboard/` | Training dashboard (reads `runs/summary.json`) |
 | `supervisor.sh`, `ei_args.txt` | Unattended training loop and its configuration |
 | `models/champion.pt` | Current best network (`ei u44`) |

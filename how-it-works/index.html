@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How a small neural network learned Lost Cities by self-play: what it sees, how the search teaches it, the expert-iteration loop, and the measurements behind each step.">
+<style>body { margin: 0; } img { max-width: 100%; } [hidden] { display: none !important; }</style>
+<title>Inside the Lost Cities Bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<style>
+/* Layout: one reading column (~66ch); figures break out to a wider measure and read left to right.
+   The five expedition colours appear only where they mean a card colour. */
+:root {
+  --paper: #f2f4f5;
+  --surface: #fbfcfc;
+  --ink: #15202a;
+  --ink-2: #3d4a56;
+  --muted: #5f6c78;
+  --rule: #d3d9de;
+  --accent: #1d6e57;
+  --accent-wash: rgba(29, 110, 87, .10);
+  --reject: #7f8a95;
+  --yel: #d4a017; --blu: #2f6db5; --wht: #a9c3e2; --grn: #13896f; --red: #d2452b;
+  --on-yel: #15202a; --on-blu: #ffffff; --on-wht: #15202a; --on-grn: #ffffff; --on-red: #ffffff;
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --font-body: "Literata", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1519; --surface: #151d23; --ink: #e3e9ed; --ink-2: #b6c1ca; --muted: #8d9aa5; --rule: #2a353e;
+    --accent: #48b893; --accent-wash: rgba(72, 184, 147, .14); --reject: #6b7884;
+    --yel: #c79a24; --blu: #4a86d2; --wht: #b4c8e2; --grn: #1f9a80; --red: #d4553a;
+    --on-yel: #10171c; --on-blu: #ffffff; --on-wht: #10171c; --on-grn: #ffffff; --on-red: #ffffff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f1519; --surface: #151d23; --ink: #e3e9ed; --ink-2: #b6c1ca; --muted: #8d9aa5; --rule: #2a353e;
+  --accent: #48b893; --accent-wash: rgba(72, 184, 147, .14); --reject: #6b7884;
+  --yel: #c79a24; --blu: #4a86d2; --wht: #b4c8e2; --grn: #1f9a80; --red: #d4553a;
+  --on-yel: #10171c; --on-blu: #ffffff; --on-wht: #10171c; --on-grn: #ffffff; --on-red: #ffffff;
+  color-scheme: dark;
+}
+
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 1.0625rem; line-height: 1.62; }
+.page { max-width: 60rem; margin: 0 auto; padding-inline: 1.25rem; padding-block: 2.5rem 4rem; }
+.col { max-width: 41rem; }
+h1, h2 { font-family: var(--font-display); font-weight: 800; letter-spacing: .01em; line-height: 1.02; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.8rem, 8vw, 4.6rem); text-transform: uppercase; }
+h2 { font-size: clamp(1.8rem, 4.4vw, 2.4rem); text-transform: uppercase; }
+h3 { font-family: var(--font-body); font-size: 1.05rem; font-weight: 600; margin: 0; }
+p { margin: 0; }
+a { color: var(--accent); text-underline-offset: .18em; }
+a:focus-visible, svg:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+code, .mono { font-family: var(--font-mono); font-size: .86em; }
+
+.masthead { display: grid; gap: 1.1rem; padding-bottom: 2.2rem; border-bottom: 1px solid var(--rule); }
+.kicker { font-family: var(--font-mono); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.stand { font-size: 1.25rem; line-height: 1.5; color: var(--ink-2); max-width: 38rem; }
+.links { display: flex; flex-wrap: wrap; gap: .6rem 1.4rem; font-family: var(--font-mono); font-size: .9rem; }
+.spec { display: flex; flex-wrap: wrap; gap: .4rem 1.6rem; font-family: var(--font-mono); font-size: .8rem; color: var(--muted); }
+.spec b { color: var(--ink); font-weight: 500; }
+
+section { display: grid; gap: 1.1rem; padding-block: 2.6rem 0; }
+.step { display: flex; align-items: baseline; gap: .9rem; }
+.step .n { font-family: var(--font-mono); font-size: .85rem; color: var(--accent); }
+.prose { display: grid; gap: .95rem; }
+
+figure { margin: .6rem 0 0; display: grid; gap: .7rem; }
+.frame { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem 1.2rem; overflow-x: auto; }
+.frame svg { display: block; width: 100%; height: auto; min-width: 640px; }
+figcaption { font-size: .92rem; line-height: 1.5; color: var(--muted); max-width: 44rem; }
+.legend { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; font-family: var(--font-mono); font-size: .78rem; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: .45rem; }
+.key { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
+.key.hand { background: var(--blu); }
+.key.table { background: var(--blu); opacity: .28; }
+.key.known { border: 2px solid var(--blu); }
+.key.unseen { border: 1px dashed var(--muted); }
+.key.line { height: 0; border-top: 2px solid var(--accent); width: 22px; border-radius: 0; }
+.key.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--reject); }
+
+/* svg text and marks, all from tokens */
+svg { color: var(--ink); font-family: var(--font-mono); }
+.t-lab { font-family: var(--font-body); font-size: 14px; fill: var(--ink); }
+.t-lab.strong { font-weight: 600; }
+.t-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; fill: var(--ink); }
+.t-cap { font-size: 11px; fill: var(--muted); }
+.t-tick { font-size: 11px; fill: var(--muted); }
+.t-num { font-size: 13px; fill: var(--ink-2); }
+.t-num.strong, .t-big { fill: var(--ink); font-weight: 500; }
+.t-big { font-size: 22px; }
+.t-card { font-size: 13px; font-weight: 500; fill: var(--ink); }
+.t-card.dim { fill: var(--ink-2); }
+.t-card.faint { fill: var(--muted); opacity: .75; }
+.f-yel { fill: var(--yel); } .f-blu { fill: var(--blu); } .f-wht { fill: var(--wht); } .f-grn { fill: var(--grn); } .f-red { fill: var(--red); }
+.s-yel { stroke: var(--yel); } .s-blu { stroke: var(--blu); } .s-wht { stroke: var(--wht); } .s-grn { stroke: var(--grn); } .s-red { stroke: var(--red); }
+.on-yel { fill: var(--on-yel); } .on-blu { fill: var(--on-blu); } .on-wht { fill: var(--on-wht); } .on-grn { fill: var(--on-grn); } .on-red { fill: var(--on-red); }
+.edge { stroke: var(--ink); stroke-opacity: .18; stroke-width: 1; }
+.wash { fill-opacity: .28; }
+.known { fill: none; stroke-width: 2.5; }
+.unseen { fill: none; stroke: var(--muted); stroke-opacity: .7; stroke-dasharray: 3 3; }
+.box { fill: var(--surface); stroke: var(--ink); stroke-opacity: .35; stroke-width: 1.2; }
+.box.layer { fill: var(--accent-wash); stroke: var(--accent); stroke-opacity: 1; }
+.box.hot { stroke: var(--accent); stroke-opacity: 1; stroke-width: 2; }
+.row { fill: var(--paper); stroke: var(--rule); }
+.arrow { stroke: var(--ink-2); stroke-width: 1.5; fill: none; }
+.arrow.hot { stroke: var(--accent); stroke-width: 2; }
+.ah { fill: var(--ink-2); } .ah.hot { fill: var(--accent); }
+.grid { stroke: var(--rule); stroke-width: 1; }
+.grid.zero { stroke: var(--muted); }
+.note { stroke: var(--muted); stroke-width: 1; stroke-opacity: .6; }
+.pick { fill: var(--accent-wash); }
+.dot { fill: var(--ink-2); fill-opacity: .38; }
+.dot-pick { fill: var(--accent); fill-opacity: .6; }
+.mean { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; }
+.mean-pick { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.champ { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.rej { fill: var(--reject); stroke: var(--surface); stroke-width: 2; }
+.xhair { stroke: var(--muted); stroke-width: 1; }
+
+.chartbox { position: relative; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px;
+  padding: .45rem .6rem; font-family: var(--font-mono); font-size: .78rem; line-height: 1.4; color: var(--ink-2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12); white-space: nowrap; }
+.tip b { display: block; color: var(--ink); font-size: .95rem; font-weight: 500; }
+
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: .55rem .7rem .55rem 0; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--font-mono); font-size: .74rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+td.num, .data td { font-family: var(--font-mono); font-size: .84rem; font-variant-numeric: tabular-nums; }
+.tablewrap { overflow-x: auto; }
+.tablewrap table { min-width: 34rem; }
+details { font-size: .9rem; color: var(--ink-2); }
+summary { cursor: pointer; font-family: var(--font-mono); font-size: .8rem; color: var(--muted); }
+details .tablewrap { max-height: 18rem; overflow-y: auto; margin-top: .6rem; }
+details table { min-width: 0; }
+.refs { display: grid; gap: .7rem; padding: 0; margin: 0; list-style: none; font-size: .95rem; }
+.refs li span { color: var(--muted); }
+footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: .78rem; color: var(--muted); }
+@media (max-width: 34rem) { body { font-size: 1rem; } .stand { font-size: 1.1rem; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+<header class="masthead">
+  <div class="kicker">Lost Cities AI · how it works</div>
+  <h1>Inside the Lost Cities Bot</h1>
+  <p class="stand">A 3&nbsp;MB neural network learned the card game Lost Cities by playing against itself on one gaming PC. It now beats its author three matches out of four. This page walks through how it plays, how it learned, and what it took to get there.</p>
+  <div class="links">
+    <a href="https://gnabcel.github.io/lost-cities-ai/web/">Play it in your browser ↗</a>
+    <a href="https://github.com/gnabcel/lost-cities-ai">Code on GitHub ↗</a>
+  </div>
+  <div class="spec">
+    <span><b>0.8 M</b> parameters</span>
+    <span><b>126</b> possible moves</span>
+    <span><b>64</b> imagined deals per move</span>
+    <span><b>47</b> training iterations</span>
+    <span><b>1</b> RTX 3070</span>
+  </div>
+</header>
+
+<section>
+  <div class="step"><span class="n">01</span><h2>Half the cards are hidden</h2></div>
+  <div class="col prose">
+    <p>Lost Cities has 60 cards in five colours, one per expedition. Each colour has cards 2 to 10 and three wager cards. On your turn you play a card onto one of your expeditions or discard it, then draw from the deck or from the top of a discard pile. Expeditions must go up in value, every expedition you start costs 20 points, and wagers multiply the result.</p>
+    <p>You never see your opponent's eight cards or the order of the deck. That rules out the chess approach of searching the game tree directly, because the bot doesn't know which tree it is in.</p>
+  </div>
+  <figure>
+    <div class="frame"><svg viewBox="0 0 724 214" role="img" aria-label="Grid of the 60 cards in a real position: 8 in the bot's hand, 14 visible on the table, 1 known card in the opponent's hand, and 38 unseen cards."><text class="t-cap" x="179.0" y="16" text-anchor="middle">wagers</text><text class="t-cap" x="283.0" y="16" text-anchor="middle">2</text><text class="t-cap" x="335.0" y="16" text-anchor="middle">3</text><text class="t-cap" x="387.0" y="16" text-anchor="middle">4</text><text class="t-cap" x="439.0" y="16" text-anchor="middle">5</text><text class="t-cap" x="491.0" y="16" text-anchor="middle">6</text><text class="t-cap" x="543.0" y="16" text-anchor="middle">7</text><text class="t-cap" x="595.0" y="16" text-anchor="middle">8</text><text class="t-cap" x="647.0" y="16" text-anchor="middle">9</text><text class="t-cap" x="699.0" y="16" text-anchor="middle">10</text><rect class="f-yel edge" x="0" y="39" width="12" height="12" rx="3"/><text class="t-lab" x="20" y="50">Yellow</text><rect class="f-yel wash" x="104" y="30" width="46" height="30" rx="4"/><text class="t-card dim" x="127.0" y="49.5" text-anchor="middle">×</text><rect class="unseen" x="156.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="179.0" y="49.5" text-anchor="middle">×</text><rect class="f-yel edge" x="208" y="30" width="46" height="30" rx="4"/><text class="t-card on-yel" x="231.0" y="49.5" text-anchor="middle">×</text><rect class="f-yel wash" x="260" y="30" width="46" height="30" rx="4"/><text class="t-card dim" x="283.0" y="49.5" text-anchor="middle">2</text><rect class="s-yel known" x="313" y="31" width="44" height="28" rx="4"/><text class="t-card" x="335.0" y="49.5" text-anchor="middle">3</text><rect class="unseen" x="364.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="387.0" y="49.5" text-anchor="middle">4</text><rect class="unseen" x="416.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="439.0" y="49.5" text-anchor="middle">5</text><rect class="unseen" x="468.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="491.0" y="49.5" text-anchor="middle">6</text><rect class="unseen" x="520.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="543.0" y="49.5" text-anchor="middle">7</text><rect class="unseen" x="572.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="595.0" y="49.5" text-anchor="middle">8</text><rect class="unseen" x="624.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="647.0" y="49.5" text-anchor="middle">9</text><rect class="unseen" x="676.5" y="30.5" width="45" height="29" rx="4"/><text class="t-card faint" x="699.0" y="49.5" text-anchor="middle">10</text><rect class="f-blu edge" x="0" y="77" width="12" height="12" rx="3"/><text class="t-lab" x="20" y="88">Blue</text><rect class="unseen" x="104.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="127.0" y="87.5" text-anchor="middle">×</text><rect class="unseen" x="156.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="179.0" y="87.5" text-anchor="middle">×</text><rect class="f-blu edge" x="208" y="68" width="46" height="30" rx="4"/><text class="t-card on-blu" x="231.0" y="87.5" text-anchor="middle">×</text><rect class="unseen" x="260.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="283.0" y="87.5" text-anchor="middle">2</text><rect class="unseen" x="312.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="335.0" y="87.5" text-anchor="middle">3</text><rect class="unseen" x="364.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="387.0" y="87.5" text-anchor="middle">4</text><rect class="unseen" x="416.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="439.0" y="87.5" text-anchor="middle">5</text><rect class="unseen" x="468.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="491.0" y="87.5" text-anchor="middle">6</text><rect class="unseen" x="520.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="543.0" y="87.5" text-anchor="middle">7</text><rect class="unseen" x="572.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="595.0" y="87.5" text-anchor="middle">8</text><rect class="unseen" x="624.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="647.0" y="87.5" text-anchor="middle">9</text><rect class="unseen" x="676.5" y="68.5" width="45" height="29" rx="4"/><text class="t-card faint" x="699.0" y="87.5" text-anchor="middle">10</text><rect class="f-wht edge" x="0" y="115" width="12" height="12" rx="3"/><text class="t-lab" x="20" y="126">White</text><rect class="unseen" x="104.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="127.0" y="125.5" text-anchor="middle">×</text><rect class="f-wht edge" x="156" y="106" width="46" height="30" rx="4"/><text class="t-card on-wht" x="179.0" y="125.5" text-anchor="middle">×</text><rect class="unseen" x="208.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="231.0" y="125.5" text-anchor="middle">×</text><rect class="unseen" x="260.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="283.0" y="125.5" text-anchor="middle">2</text><rect class="unseen" x="312.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="335.0" y="125.5" text-anchor="middle">3</text><rect class="f-wht wash" x="364" y="106" width="46" height="30" rx="4"/><text class="t-card dim" x="387.0" y="125.5" text-anchor="middle">4</text><rect class="f-wht wash" x="416" y="106" width="46" height="30" rx="4"/><text class="t-card dim" x="439.0" y="125.5" text-anchor="middle">5</text><rect class="f-wht wash" x="468" y="106" width="46" height="30" rx="4"/><text class="t-card dim" x="491.0" y="125.5" text-anchor="middle">6</text><rect class="unseen" x="520.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="543.0" y="125.5" text-anchor="middle">7</text><rect class="f-wht edge" x="572" y="106" width="46" height="30" rx="4"/><text class="t-card on-wht" x="595.0" y="125.5" text-anchor="middle">8</text><rect class="unseen" x="624.5" y="106.5" width="45" height="29" rx="4"/><text class="t-card faint" x="647.0" y="125.5" text-anchor="middle">9</text><rect class="f-wht edge" x="676" y="106" width="46" height="30" rx="4"/><text class="t-card on-wht" x="699.0" y="125.5" text-anchor="middle">10</text><rect class="f-grn edge" x="0" y="153" width="12" height="12" rx="3"/><text class="t-lab" x="20" y="164">Green</text><rect class="unseen" x="104.5" y="144.5" width="45" height="29" rx="4"/><text class="t-card faint" x="127.0" y="163.5" text-anchor="middle">×</text><rect class="f-grn wash" x="156" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="179.0" y="163.5" text-anchor="middle">×</text><rect class="f-grn wash" x="208" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="231.0" y="163.5" text-anchor="middle">×</text><rect class="f-grn wash" x="260" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="283.0" y="163.5" text-anchor="middle">2</text><rect class="f-grn wash" x="312" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="335.0" y="163.5" text-anchor="middle">3</text><rect class="unseen" x="364.5" y="144.5" width="45" height="29" rx="4"/><text class="t-card faint" x="387.0" y="163.5" text-anchor="middle">4</text><rect class="f-grn wash" x="416" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="439.0" y="163.5" text-anchor="middle">5</text><rect class="unseen" x="468.5" y="144.5" width="45" height="29" rx="4"/><text class="t-card faint" x="491.0" y="163.5" text-anchor="middle">6</text><rect class="f-grn wash" x="520" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="543.0" y="163.5" text-anchor="middle">7</text><rect class="f-grn wash" x="572" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="595.0" y="163.5" text-anchor="middle">8</text><rect class="unseen" x="624.5" y="144.5" width="45" height="29" rx="4"/><text class="t-card faint" x="647.0" y="163.5" text-anchor="middle">9</text><rect class="f-grn wash" x="676" y="144" width="46" height="30" rx="4"/><text class="t-card dim" x="699.0" y="163.5" text-anchor="middle">10</text><rect class="f-red edge" x="0" y="191" width="12" height="12" rx="3"/><text class="t-lab" x="20" y="202">Red</text><rect class="unseen" x="104.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="127.0" y="201.5" text-anchor="middle">×</text><rect class="unseen" x="156.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="179.0" y="201.5" text-anchor="middle">×</text><rect class="unseen" x="208.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="231.0" y="201.5" text-anchor="middle">×</text><rect class="unseen" x="260.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="283.0" y="201.5" text-anchor="middle">2</text><rect class="f-red edge" x="312" y="182" width="46" height="30" rx="4"/><text class="t-card on-red" x="335.0" y="201.5" text-anchor="middle">3</text><rect class="f-red edge" x="364" y="182" width="46" height="30" rx="4"/><text class="t-card on-red" x="387.0" y="201.5" text-anchor="middle">4</text><rect class="unseen" x="416.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="439.0" y="201.5" text-anchor="middle">5</text><rect class="unseen" x="468.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="491.0" y="201.5" text-anchor="middle">6</text><rect class="unseen" x="520.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="543.0" y="201.5" text-anchor="middle">7</text><rect class="unseen" x="572.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="595.0" y="201.5" text-anchor="middle">8</text><rect class="unseen" x="624.5" y="182.5" width="45" height="29" rx="4"/><text class="t-card faint" x="647.0" y="201.5" text-anchor="middle">9</text><rect class="f-red edge" x="676" y="182" width="46" height="30" rx="4"/><text class="t-card on-red" x="699.0" y="201.5" text-anchor="middle">10</text></svg></div>
+    <div class="legend" aria-hidden="true">
+      <span><i class="key hand"></i>In the bot's hand (8)</span>
+      <span><i class="key table"></i>On the table: expeditions and discard piles (13)</span>
+      <span><i class="key known"></i>In the opponent's hand, known because they drew it from a pile (1)</span>
+      <span><i class="key unseen"></i>Unseen (38)</span>
+    </div>
+    <figcaption>Every card in a real mid-round position, from the bot's point of view. The 38 unseen cards are split between the opponent's hand (7) and the deck (31), and the bot can't tell which is where. Keep this pool in mind: it is what the search reshuffles in step 04.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">02</span><h2>A small network makes the first guess</h2></div>
+  <div class="col prose">
+    <p>The position is turned into 429 numbers: which cards sit where, plus a few per-colour summaries such as how many useful cards are still out there. A plain neural network (three layers of 512 units) turns those numbers into two answers.</p>
+    <p>The <b>policy</b> scores all 126 moves. Illegal moves are masked out and the rest become probabilities. The <b>value</b> estimates how many points ahead or behind the bot will finish the round. Picking the most likely move already plays well. It takes about a millisecond.</p>
+  </div>
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 880 316" role="img" aria-label="The network: 429 input numbers in nine groups feed three layers of 512 units, which feed a 126-way policy head and a one-number value head.">
+        <defs>
+          <marker id="ah-net" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <text class="t-cap" x="0" y="14">input · 429 numbers</text>
+        <g>
+          <rect class="row" x="0" y="26" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="44">Your hand</text><text class="t-num" x="240" y="44" text-anchor="end">60</text>
+          <rect class="row" x="0" y="56" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="74">Your expeditions</text><text class="t-num" x="240" y="74" text-anchor="end">60</text>
+          <rect class="row" x="0" y="86" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="104">Opponent's expeditions</text><text class="t-num" x="240" y="104" text-anchor="end">60</text>
+          <rect class="row" x="0" y="116" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="134">Cards on discard piles</text><text class="t-num" x="240" y="134" text-anchor="end">60</text>
+          <rect class="row" x="0" y="146" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="164">Top card of each pile</text><text class="t-num" x="240" y="164" text-anchor="end">60</text>
+          <rect class="row" x="0" y="176" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="194">Opponent's cards you know</text><text class="t-num" x="240" y="194" text-anchor="end">60</text>
+          <rect class="row" x="0" y="206" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="224">Deck size, phase, blocked pile</text><text class="t-num" x="240" y="224" text-anchor="end">8</text>
+          <rect class="row" x="0" y="236" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="254">Per-colour summaries</text><text class="t-num" x="240" y="254" text-anchor="end">60</text>
+          <rect class="row" x="0" y="266" width="250" height="26" rx="4"/><text class="t-lab" x="10" y="284">Turns left</text><text class="t-num" x="240" y="284" text-anchor="end">1</text>
+        </g>
+        <line class="arrow" x1="258" y1="159" x2="326" y2="159" marker-end="url(#ah-net)"/>
+        <text class="t-cap" x="292" y="151" text-anchor="middle">weights</text>
+        <rect class="box layer" x="332" y="46" width="62" height="226" rx="6"/><text class="t-num strong" x="363" y="38" text-anchor="middle">512</text>
+        <rect class="box layer" x="436" y="46" width="62" height="226" rx="6"/><text class="t-num strong" x="467" y="38" text-anchor="middle">512</text>
+        <rect class="box layer" x="540" y="46" width="62" height="226" rx="6"/><text class="t-num strong" x="571" y="38" text-anchor="middle">512</text>
+        <line class="arrow" x1="398" y1="159" x2="432" y2="159" marker-end="url(#ah-net)"/>
+        <line class="arrow" x1="502" y1="159" x2="536" y2="159" marker-end="url(#ah-net)"/>
+        <text class="t-cap" x="467" y="292" text-anchor="middle">hidden layers · ReLU</text>
+        <path class="arrow" d="M606 130 C 630 130, 632 104, 654 104" marker-end="url(#ah-net)"/>
+        <path class="arrow" d="M606 190 C 630 190, 632 238, 654 238" marker-end="url(#ah-net)"/>
+        <rect class="box hot" x="660" y="30" width="220" height="148" rx="8"/>
+        <text class="t-title" x="676" y="54">Policy · 126 moves</text>
+        <text class="t-cap" x="676" y="78">play a card</text><text class="t-num" x="864" y="78" text-anchor="end">60</text>
+        <text class="t-cap" x="676" y="98">discard a card</text><text class="t-num" x="864" y="98" text-anchor="end">60</text>
+        <text class="t-cap" x="676" y="118">draw from the deck</text><text class="t-num" x="864" y="118" text-anchor="end">1</text>
+        <text class="t-cap" x="676" y="138">draw from a pile</text><text class="t-num" x="864" y="138" text-anchor="end">5</text>
+        <text class="t-cap" x="676" y="164">illegal moves masked → probabilities</text>
+        <rect class="box" x="660" y="200" width="220" height="80" rx="8"/>
+        <text class="t-title" x="676" y="226">Value · 1 number</text>
+        <text class="t-cap" x="676" y="248">expected point difference</text>
+        <text class="t-cap" x="676" y="266">at the end of the round</text>
+      </svg>
+    </div>
+    <figcaption>The whole network. Every arrow is a matrix of learned weights; training means nudging those 0.8 million numbers with backpropagation until the outputs get better.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">03</span><h2>Four stages of learning</h2></div>
+  <div class="col prose">
+    <p>The network started knowing nothing. Each stage built on the previous one, and each was measured in points per round against a hand-written rule-based bot.</p>
+  </div>
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 880 196" role="img" aria-label="Four stages: heuristic rules, behaviour cloning at minus 5.8, PPO self-play at plus 27.7, expert iteration at plus 30.3 against the heuristic.">
+        <defs>
+          <marker id="ah-tl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <g>
+          <rect class="box" x="0" y="34" width="190" height="150" rx="8"/>
+          <text class="t-cap" x="14" y="56">1 · baseline</text>
+          <text class="t-title" x="14" y="80">Heuristic</text>
+          <text class="t-cap" x="14" y="102">hand-written rules,</text>
+          <text class="t-cap" x="14" y="118">always draws from the deck</text>
+          <text class="t-big" x="14" y="166">0</text>
+        </g>
+        <line class="arrow" x1="194" y1="109" x2="226" y2="109" marker-end="url(#ah-tl)"/>
+        <text class="t-cap" x="210" y="24" text-anchor="middle">imitate</text>
+        <g>
+          <rect class="box" x="230" y="34" width="190" height="150" rx="8"/>
+          <text class="t-cap" x="244" y="56">2 · supervised</text>
+          <text class="t-title" x="244" y="80">Behaviour cloning</text>
+          <text class="t-cap" x="244" y="102">learn to predict the</text>
+          <text class="t-cap" x="244" y="118">heuristic's moves</text>
+          <text class="t-big" x="244" y="166">−5.8</text>
+        </g>
+        <line class="arrow" x1="424" y1="109" x2="456" y2="109" marker-end="url(#ah-tl)"/>
+        <text class="t-cap" x="440" y="24" text-anchor="middle">play itself</text>
+        <g>
+          <rect class="box" x="460" y="34" width="190" height="150" rx="8"/>
+          <text class="t-cap" x="474" y="56">3 · reinforcement</text>
+          <text class="t-title" x="474" y="80">PPO self-play</text>
+          <text class="t-cap" x="474" y="102">2,048 games at once,</text>
+          <text class="t-cap" x="474" y="118">reward = final points</text>
+          <text class="t-big" x="474" y="166">+27.7</text>
+        </g>
+        <line class="arrow" x1="654" y1="109" x2="686" y2="109" marker-end="url(#ah-tl)"/>
+        <text class="t-cap" x="670" y="24" text-anchor="middle">search teaches</text>
+        <g>
+          <rect class="box hot" x="690" y="34" width="190" height="150" rx="8"/>
+          <text class="t-cap" x="704" y="56">4 · search + supervised</text>
+          <text class="t-title" x="704" y="80">Expert iteration</text>
+          <text class="t-cap" x="704" y="102">a search plays, the</text>
+          <text class="t-cap" x="704" y="118">network copies it</text>
+          <text class="t-big" x="704" y="166">+30.3</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Big numbers are average points per round against the heuristic. Imitation alone was slightly worse than the original. Reinforcement learning with PPO went far past it and then plateaued. Expert iteration is the stage that kept improving, and its real progress shows up head-to-head (step 06) more than against the heuristic.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">04</span><h2>The teacher imagines 64 deals</h2></div>
+  <div class="col prose">
+    <p>To beat the network you need something that plays better than it. That teacher is a search built on top of the network itself. On each move it takes the network's top four candidates and deals the 38 unseen cards at random, 64 times, consistent with everything the bot has seen. In each imagined deal it plays the candidate and lets the network finish the round for both players.</p>
+    <p>Each candidate gets the average result over the same 64 deals, plus a bonus for the network's own confidence: <code>score = mean + 2 · ln(probability)</code>. The bonus stops the search from overruling the network on noise alone. The technique is called determinized Monte Carlo search, or PIMC.</p>
+  </div>
+  <figure>
+    <div class="frame"><svg viewBox="-8 0 896 286" role="img" aria-label="For each of the four candidate moves, 64 simulated outcomes and their mean. Playing red 3 has the best score, +3.2, although the network gave it only 8%."><text class="t-cap" x="0" y="24">Candidate move · network's probability</text><text class="t-cap" x="469.0" y="24" text-anchor="middle">64 imagined deals · final point difference</text><text class="t-cap" x="744" y="24" text-anchor="end">mean</text><text class="t-cap" x="806" y="24" text-anchor="end">+2·ln p</text><text class="t-cap" x="870" y="24" text-anchor="end">= score</text><line class="grid" x1="296.5" x2="296.5" y1="40" y2="260"/><text class="t-tick" x="296.5" y="276" text-anchor="middle">-120</text><line class="grid" x1="365.5" x2="365.5" y1="40" y2="260"/><text class="t-tick" x="365.5" y="276" text-anchor="middle">-80</text><line class="grid" x1="434.5" x2="434.5" y1="40" y2="260"/><text class="t-tick" x="434.5" y="276" text-anchor="middle">-40</text><line class="grid zero" x1="503.5" x2="503.5" y1="40" y2="260"/><text class="t-tick" x="503.5" y="276" text-anchor="middle">0</text><line class="grid" x1="572.5" x2="572.5" y1="40" y2="260"/><text class="t-tick" x="572.5" y="276" text-anchor="middle">+40</text><line class="grid" x1="641.5" x2="641.5" y1="40" y2="260"/><text class="t-tick" x="641.5" y="276" text-anchor="middle">+80</text><text class="t-lab" x="0" y="68.0">Discard white wager</text><text class="t-cap" x="0" y="84.0">network 39%</text><circle class="dot" cx="494.9" cy="64.2" r="2.6"/><circle class="dot" cx="491.4" cy="72.1" r="2.6"/><circle class="dot" cx="482.8" cy="67.6" r="2.6"/><circle class="dot" cx="560.4" cy="73.7" r="2.6"/><circle class="dot" cx="508.7" cy="74.3" r="2.6"/><circle class="dot" cx="520.8" cy="59.7" r="2.6"/><circle class="dot" cx="365.5" cy="58.3" r="2.6"/><circle class="dot" cx="458.6" cy="79.8" r="2.6"/><circle class="dot" cx="512.1" cy="64.7" r="2.6"/><circle class="dot" cx="500.0" cy="64.1" r="2.6"/><circle class="dot" cx="474.2" cy="83.9" r="2.6"/><circle class="dot" cx="508.7" cy="70.2" r="2.6"/><circle class="dot" cx="536.3" cy="79.7" r="2.6"/><circle class="dot" cx="491.4" cy="70.4" r="2.6"/><circle class="dot" cx="425.9" cy="74.6" r="2.6"/><circle class="dot" cx="470.7" cy="61.9" r="2.6"/><circle class="dot" cx="501.8" cy="74.5" r="2.6"/><circle class="dot" cx="613.9" cy="80.6" r="2.6"/><circle class="dot" cx="563.9" cy="71.6" r="2.6"/><circle class="dot" cx="420.7" cy="77.3" r="2.6"/><circle class="dot" cx="441.4" cy="75.5" r="2.6"/><circle class="dot" cx="493.1" cy="59.7" r="2.6"/><circle class="dot" cx="479.4" cy="77.7" r="2.6"/><circle class="dot" cx="615.6" cy="73.4" r="2.6"/><circle class="dot" cx="477.6" cy="65.8" r="2.6"/><circle class="dot" cx="431.0" cy="58.8" r="2.6"/><circle class="dot" cx="413.8" cy="80.5" r="2.6"/><circle class="dot" cx="565.6" cy="70.3" r="2.6"/><circle class="dot" cx="572.5" cy="76.7" r="2.6"/><circle class="dot" cx="550.1" cy="80.8" r="2.6"/><circle class="dot" cx="550.1" cy="76.6" r="2.6"/><circle class="dot" cx="563.9" cy="81.9" r="2.6"/><circle class="dot" cx="467.3" cy="68.3" r="2.6"/><circle class="dot" cx="534.5" cy="78.8" r="2.6"/><circle class="dot" cx="676.0" cy="69.6" r="2.6"/><circle class="dot" cx="622.5" cy="82.3" r="2.6"/><circle class="dot" cx="543.2" cy="80.9" r="2.6"/><circle class="dot" cx="512.1" cy="60.5" r="2.6"/><circle class="dot" cx="482.8" cy="61.5" r="2.6"/><circle class="dot" cx="431.0" cy="63.6" r="2.6"/><circle class="dot" cx="443.1" cy="83.1" r="2.6"/><circle class="dot" cx="420.7" cy="69.3" r="2.6"/><circle class="dot" cx="601.8" cy="74.3" r="2.6"/><circle class="dot" cx="507.0" cy="65.8" r="2.6"/><circle class="dot" cx="525.9" cy="71.2" r="2.6"/><circle class="dot" cx="458.6" cy="68.0" r="2.6"/><circle class="dot" cx="574.2" cy="67.1" r="2.6"/><circle class="dot" cx="453.5" cy="73.2" r="2.6"/><circle class="dot" cx="475.9" cy="73.2" r="2.6"/><circle class="dot" cx="360.3" cy="81.5" r="2.6"/><circle class="dot" cx="451.8" cy="75.7" r="2.6"/><circle class="dot" cx="444.9" cy="82.2" r="2.6"/><circle class="dot" cx="574.2" cy="80.3" r="2.6"/><circle class="dot" cx="624.2" cy="83.8" r="2.6"/><circle class="dot" cx="496.6" cy="75.5" r="2.6"/><circle class="dot" cx="398.3" cy="62.2" r="2.6"/><circle class="dot" cx="513.8" cy="80.4" r="2.6"/><circle class="dot" cx="544.9" cy="83.1" r="2.6"/><circle class="dot" cx="639.8" cy="81.5" r="2.6"/><circle class="dot" cx="525.9" cy="72.8" r="2.6"/><circle class="dot" cx="517.3" cy="76.6" r="2.6"/><circle class="dot" cx="474.2" cy="63.5" r="2.6"/><circle class="dot" cx="551.8" cy="79.6" r="2.6"/><circle class="dot" cx="367.2" cy="72.9" r="2.6"/><line class="mean" x1="504.3" x2="504.3" y1="54.0" y2="88.0"/><text class="t-num" x="744" y="75.0" text-anchor="end">+0.4</text><text class="t-num" x="806" y="75.0" text-anchor="end">-1.9</text><text class="t-num" x="870" y="75.0" text-anchor="end">-1.4</text><text class="t-lab" x="0" y="122.0">Discard yellow wager</text><text class="t-cap" x="0" y="138.0">network 29%</text><circle class="dot" cx="577.7" cy="119.4" r="2.6"/><circle class="dot" cx="477.6" cy="113.6" r="2.6"/><circle class="dot" cx="462.1" cy="134.2" r="2.6"/><circle class="dot" cx="546.6" cy="137.7" r="2.6"/><circle class="dot" cx="482.8" cy="114.3" r="2.6"/><circle class="dot" cx="474.2" cy="132.8" r="2.6"/><circle class="dot" cx="427.6" cy="122.7" r="2.6"/><circle class="dot" cx="493.1" cy="115.9" r="2.6"/><circle class="dot" cx="498.3" cy="119.6" r="2.6"/><circle class="dot" cx="531.1" cy="132.0" r="2.6"/><circle class="dot" cx="491.4" cy="134.7" r="2.6"/><circle class="dot" cx="548.3" cy="113.1" r="2.6"/><circle class="dot" cx="491.4" cy="128.0" r="2.6"/><circle class="dot" cx="484.5" cy="113.2" r="2.6"/><circle class="dot" cx="436.2" cy="130.7" r="2.6"/><circle class="dot" cx="550.1" cy="120.6" r="2.6"/><circle class="dot" cx="484.5" cy="134.9" r="2.6"/><circle class="dot" cx="560.4" cy="137.5" r="2.6"/><circle class="dot" cx="463.8" cy="125.1" r="2.6"/><circle class="dot" cx="339.6" cy="138.0" r="2.6"/><circle class="dot" cx="600.1" cy="120.1" r="2.6"/><circle class="dot" cx="437.9" cy="114.0" r="2.6"/><circle class="dot" cx="424.1" cy="127.6" r="2.6"/><circle class="dot" cx="524.2" cy="112.8" r="2.6"/><circle class="dot" cx="482.8" cy="117.1" r="2.6"/><circle class="dot" cx="453.5" cy="122.6" r="2.6"/><circle class="dot" cx="591.5" cy="127.9" r="2.6"/><circle class="dot" cx="589.8" cy="116.1" r="2.6"/><circle class="dot" cx="572.5" cy="113.1" r="2.6"/><circle class="dot" cx="370.7" cy="134.6" r="2.6"/><circle class="dot" cx="398.3" cy="120.2" r="2.6"/><circle class="dot" cx="562.1" cy="136.9" r="2.6"/><circle class="dot" cx="337.9" cy="135.3" r="2.6"/><circle class="dot" cx="451.8" cy="121.8" r="2.6"/><circle class="dot" cx="546.6" cy="124.0" r="2.6"/><circle class="dot" cx="424.1" cy="125.5" r="2.6"/><circle class="dot" cx="429.3" cy="128.7" r="2.6"/><circle class="dot" cx="458.6" cy="127.5" r="2.6"/><circle class="dot" cx="400.0" cy="126.5" r="2.6"/><circle class="dot" cx="489.7" cy="128.1" r="2.6"/><circle class="dot" cx="443.1" cy="136.5" r="2.6"/><circle class="dot" cx="501.8" cy="125.2" r="2.6"/><circle class="dot" cx="612.2" cy="123.2" r="2.6"/><circle class="dot" cx="422.4" cy="130.7" r="2.6"/><circle class="dot" cx="529.4" cy="118.2" r="2.6"/><circle class="dot" cx="513.8" cy="119.8" r="2.6"/><circle class="dot" cx="463.8" cy="137.4" r="2.6"/><circle class="dot" cx="431.0" cy="125.5" r="2.6"/><circle class="dot" cx="482.8" cy="126.3" r="2.6"/><circle class="dot" cx="493.1" cy="112.3" r="2.6"/><circle class="dot" cx="420.7" cy="122.8" r="2.6"/><circle class="dot" cx="413.8" cy="127.1" r="2.6"/><circle class="dot" cx="548.3" cy="112.5" r="2.6"/><circle class="dot" cx="274.1" cy="128.0" r="2.6"/><circle class="dot" cx="382.8" cy="128.4" r="2.6"/><circle class="dot" cx="482.8" cy="113.6" r="2.6"/><circle class="dot" cx="539.7" cy="128.3" r="2.6"/><circle class="dot" cx="415.5" cy="124.1" r="2.6"/><circle class="dot" cx="498.3" cy="129.7" r="2.6"/><circle class="dot" cx="505.2" cy="121.2" r="2.6"/><circle class="dot" cx="515.6" cy="130.4" r="2.6"/><circle class="dot" cx="501.8" cy="131.2" r="2.6"/><circle class="dot" cx="600.1" cy="112.6" r="2.6"/><circle class="dot" cx="367.2" cy="113.6" r="2.6"/><line class="mean" x1="480.1" x2="480.1" y1="108.0" y2="142.0"/><text class="t-num" x="744" y="129.0" text-anchor="end">-13.6</text><text class="t-num" x="806" y="129.0" text-anchor="end">-2.5</text><text class="t-num" x="870" y="129.0" text-anchor="end">-16.1</text><text class="t-lab" x="0" y="176.0">Discard blue wager</text><text class="t-cap" x="0" y="192.0">network 19%</text><circle class="dot" cx="453.5" cy="183.6" r="2.6"/><circle class="dot" cx="501.8" cy="191.0" r="2.6"/><circle class="dot" cx="448.3" cy="172.5" r="2.6"/><circle class="dot" cx="408.6" cy="177.9" r="2.6"/><circle class="dot" cx="463.8" cy="181.4" r="2.6"/><circle class="dot" cx="415.5" cy="174.3" r="2.6"/><circle class="dot" cx="589.8" cy="175.5" r="2.6"/><circle class="dot" cx="508.7" cy="174.1" r="2.6"/><circle class="dot" cx="451.8" cy="175.6" r="2.6"/><circle class="dot" cx="525.9" cy="181.5" r="2.6"/><circle class="dot" cx="605.3" cy="173.8" r="2.6"/><circle class="dot" cx="591.5" cy="175.8" r="2.6"/><circle class="dot" cx="626.0" cy="186.1" r="2.6"/><circle class="dot" cx="494.9" cy="166.7" r="2.6"/><circle class="dot" cx="481.1" cy="180.8" r="2.6"/><circle class="dot" cx="481.1" cy="185.1" r="2.6"/><circle class="dot" cx="465.5" cy="174.1" r="2.6"/><circle class="dot" cx="548.3" cy="171.8" r="2.6"/><circle class="dot" cx="565.6" cy="186.9" r="2.6"/><circle class="dot" cx="477.6" cy="172.2" r="2.6"/><circle class="dot" cx="486.2" cy="170.9" r="2.6"/><circle class="dot" cx="422.4" cy="177.3" r="2.6"/><circle class="dot" cx="475.9" cy="184.1" r="2.6"/><circle class="dot" cx="615.6" cy="168.6" r="2.6"/><circle class="dot" cx="477.6" cy="174.4" r="2.6"/><circle class="dot" cx="534.5" cy="174.7" r="2.6"/><circle class="dot" cx="486.2" cy="187.7" r="2.6"/><circle class="dot" cx="584.6" cy="177.4" r="2.6"/><circle class="dot" cx="541.5" cy="188.2" r="2.6"/><circle class="dot" cx="532.8" cy="170.4" r="2.6"/><circle class="dot" cx="582.9" cy="174.8" r="2.6"/><circle class="dot" cx="448.3" cy="182.9" r="2.6"/><circle class="dot" cx="475.9" cy="189.0" r="2.6"/><circle class="dot" cx="470.7" cy="177.7" r="2.6"/><circle class="dot" cx="676.0" cy="171.9" r="2.6"/><circle class="dot" cx="622.5" cy="169.1" r="2.6"/><circle class="dot" cx="550.1" cy="179.8" r="2.6"/><circle class="dot" cx="512.1" cy="171.0" r="2.6"/><circle class="dot" cx="482.8" cy="187.0" r="2.6"/><circle class="dot" cx="496.6" cy="187.8" r="2.6"/><circle class="dot" cx="522.5" cy="170.8" r="2.6"/><circle class="dot" cx="460.4" cy="173.2" r="2.6"/><circle class="dot" cx="601.8" cy="187.0" r="2.6"/><circle class="dot" cx="403.5" cy="182.7" r="2.6"/><circle class="dot" cx="484.5" cy="187.0" r="2.6"/><circle class="dot" cx="450.0" cy="175.0" r="2.6"/><circle class="dot" cx="574.2" cy="169.4" r="2.6"/><circle class="dot" cx="494.9" cy="173.6" r="2.6"/><circle class="dot" cx="420.7" cy="186.6" r="2.6"/><circle class="dot" cx="372.4" cy="173.1" r="2.6"/><circle class="dot" cx="579.4" cy="175.0" r="2.6"/><circle class="dot" cx="584.6" cy="176.8" r="2.6"/><circle class="dot" cx="574.2" cy="176.9" r="2.6"/><circle class="dot" cx="369.0" cy="176.6" r="2.6"/><circle class="dot" cx="394.8" cy="189.9" r="2.6"/><circle class="dot" cx="398.3" cy="170.1" r="2.6"/><circle class="dot" cx="431.0" cy="166.1" r="2.6"/><circle class="dot" cx="544.9" cy="190.5" r="2.6"/><circle class="dot" cx="639.8" cy="188.9" r="2.6"/><circle class="dot" cx="576.0" cy="191.7" r="2.6"/><circle class="dot" cx="538.0" cy="177.3" r="2.6"/><circle class="dot" cx="607.0" cy="190.7" r="2.6"/><circle class="dot" cx="576.0" cy="190.1" r="2.6"/><circle class="dot" cx="553.5" cy="171.8" r="2.6"/><line class="mean" x1="511.4" x2="511.4" y1="162.0" y2="196.0"/><text class="t-num" x="744" y="183.0" text-anchor="end">+4.6</text><text class="t-num" x="806" y="183.0" text-anchor="end">-3.3</text><text class="t-num" x="870" y="183.0" text-anchor="end">+1.2</text><rect class="pick" x="-6" y="209.0" width="886" height="48" rx="6"/><text class="t-lab strong" x="0" y="230.0">Play red 3</text><text class="t-cap" x="0" y="246.0">network 8% · chosen by the search</text><circle class="dot-pick" cx="496.6" cy="239.4" r="2.6"/><circle class="dot-pick" cx="437.9" cy="241.8" r="2.6"/><circle class="dot-pick" cx="548.3" cy="237.2" r="2.6"/><circle class="dot-pick" cx="544.9" cy="233.5" r="2.6"/><circle class="dot-pick" cx="500.0" cy="227.5" r="2.6"/><circle class="dot-pick" cx="510.4" cy="228.9" r="2.6"/><circle class="dot-pick" cx="550.1" cy="225.9" r="2.6"/><circle class="dot-pick" cx="536.3" cy="221.8" r="2.6"/><circle class="dot-pick" cx="484.5" cy="235.3" r="2.6"/><circle class="dot-pick" cx="531.1" cy="227.5" r="2.6"/><circle class="dot-pick" cx="450.0" cy="241.1" r="2.6"/><circle class="dot-pick" cx="589.8" cy="221.2" r="2.6"/><circle class="dot-pick" cx="574.2" cy="243.5" r="2.6"/><circle class="dot-pick" cx="529.4" cy="238.0" r="2.6"/><circle class="dot-pick" cx="463.8" cy="244.0" r="2.6"/><circle class="dot-pick" cx="527.7" cy="243.3" r="2.6"/><circle class="dot-pick" cx="531.1" cy="243.4" r="2.6"/><circle class="dot-pick" cx="548.3" cy="235.0" r="2.6"/><circle class="dot-pick" cx="586.3" cy="220.3" r="2.6"/><circle class="dot-pick" cx="489.7" cy="239.4" r="2.6"/><circle class="dot-pick" cx="569.0" cy="224.5" r="2.6"/><circle class="dot-pick" cx="489.7" cy="227.8" r="2.6"/><circle class="dot-pick" cx="455.2" cy="237.2" r="2.6"/><circle class="dot-pick" cx="500.0" cy="233.6" r="2.6"/><circle class="dot-pick" cx="503.5" cy="230.8" r="2.6"/><circle class="dot-pick" cx="546.6" cy="244.4" r="2.6"/><circle class="dot-pick" cx="586.3" cy="235.9" r="2.6"/><circle class="dot-pick" cx="648.4" cy="228.9" r="2.6"/><circle class="dot-pick" cx="391.4" cy="226.6" r="2.6"/><circle class="dot-pick" cx="550.1" cy="242.4" r="2.6"/><circle class="dot-pick" cx="427.6" cy="232.4" r="2.6"/><circle class="dot-pick" cx="512.1" cy="240.3" r="2.6"/><circle class="dot-pick" cx="441.4" cy="229.1" r="2.6"/><circle class="dot-pick" cx="482.8" cy="225.1" r="2.6"/><circle class="dot-pick" cx="596.7" cy="233.9" r="2.6"/><circle class="dot-pick" cx="589.8" cy="241.2" r="2.6"/><circle class="dot-pick" cx="507.0" cy="224.5" r="2.6"/><circle class="dot-pick" cx="517.3" cy="240.6" r="2.6"/><circle class="dot-pick" cx="553.5" cy="244.0" r="2.6"/><circle class="dot-pick" cx="431.0" cy="241.0" r="2.6"/><circle class="dot-pick" cx="420.7" cy="241.4" r="2.6"/><circle class="dot-pick" cx="491.4" cy="220.2" r="2.6"/><circle class="dot-pick" cx="617.3" cy="236.3" r="2.6"/><circle class="dot-pick" cx="456.9" cy="242.4" r="2.6"/><circle class="dot-pick" cx="493.1" cy="221.3" r="2.6"/><circle class="dot-pick" cx="491.4" cy="227.1" r="2.6"/><circle class="dot-pick" cx="477.6" cy="227.0" r="2.6"/><circle class="dot-pick" cx="453.5" cy="233.7" r="2.6"/><circle class="dot-pick" cx="512.1" cy="231.0" r="2.6"/><circle class="dot-pick" cx="381.0" cy="232.3" r="2.6"/><circle class="dot-pick" cx="629.4" cy="240.2" r="2.6"/><circle class="dot-pick" cx="520.8" cy="220.0" r="2.6"/><circle class="dot-pick" cx="560.4" cy="221.4" r="2.6"/><circle class="dot-pick" cx="615.6" cy="223.3" r="2.6"/><circle class="dot-pick" cx="496.6" cy="223.2" r="2.6"/><circle class="dot-pick" cx="444.9" cy="221.8" r="2.6"/><circle class="dot-pick" cx="532.8" cy="245.3" r="2.6"/><circle class="dot-pick" cx="470.7" cy="242.2" r="2.6"/><circle class="dot-pick" cx="648.4" cy="222.2" r="2.6"/><circle class="dot-pick" cx="488.0" cy="233.1" r="2.6"/><circle class="dot-pick" cx="565.6" cy="228.2" r="2.6"/><circle class="dot-pick" cx="589.8" cy="228.2" r="2.6"/><circle class="dot-pick" cx="517.3" cy="229.1" r="2.6"/><circle class="dot-pick" cx="520.8" cy="236.8" r="2.6"/><line class="mean-pick" x1="517.6" x2="517.6" y1="216.0" y2="250.0"/><text class="t-num" x="744" y="237.0" text-anchor="end">+8.2</text><text class="t-num" x="806" y="237.0" text-anchor="end">-5.0</text><text class="t-num strong" x="870" y="237.0" text-anchor="end">+3.2</text></svg></div>
+    <figcaption>The same position as step 01. The network's favourite was discarding the white wager (39%). Across the 64 imagined deals, playing red 3 finished 8.2 points ahead on average, enough to beat the confidence bonus, so the search picks it. Each dot is one simulated round; the spread is why 64 deals are needed and 16 were not.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">05</span><h2>The loop: play, learn, test</h2></div>
+  <div class="col prose">
+    <p>Expert iteration repeats three steps. The current champion plays a thousand rounds against itself with the search on every move. A fresh network is trained from scratch to predict what the search chose, using the last twelve iterations of games. The new network then plays the champion, and only takes over if it wins clearly.</p>
+    <p>A better network makes the simulations inside the search more realistic, which makes a better teacher, which trains a better network. That is the same idea as AlphaZero, adapted to hidden cards.</p>
+  </div>
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 880 352" role="img" aria-label="The expert-iteration loop: the champion generates self-play games with search, the decisions feed a training window, a fresh network trains on it, and a gate decides whether it becomes the new champion.">
+        <defs>
+          <marker id="ah-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ah-loop-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah hot" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box hot" x="10" y="40" width="210" height="88" rx="8"/>
+        <text class="t-title" x="26" y="70">Champion network</text>
+        <text class="t-cap" x="26" y="92">best so far, with the</text>
+        <text class="t-cap" x="26" y="108">search on top</text>
+
+        <rect class="box" x="335" y="40" width="210" height="88" rx="8"/>
+        <text class="t-title" x="351" y="70">Self-play with search</text>
+        <text class="t-cap" x="351" y="92">1,000 rounds against itself</text>
+        <text class="t-cap" x="351" y="108">7 CPU cores · ~40 min</text>
+
+        <rect class="box" x="660" y="40" width="210" height="88" rx="8"/>
+        <text class="t-title" x="676" y="70">Training window</text>
+        <text class="t-cap" x="676" y="92">last 12 iterations</text>
+        <text class="t-cap" x="676" y="108">≈ 1.2 M decisions</text>
+
+        <rect class="box" x="660" y="226" width="210" height="88" rx="8"/>
+        <text class="t-title" x="676" y="256">Fresh network</text>
+        <text class="t-cap" x="676" y="278">trained from scratch,</text>
+        <text class="t-cap" x="676" y="294">15 epochs · GPU · ~3 min</text>
+
+        <rect class="box" x="335" y="226" width="210" height="88" rx="8"/>
+        <text class="t-title" x="351" y="256">Gate</text>
+        <text class="t-cap" x="351" y="278">16,000 rounds vs the</text>
+        <text class="t-cap" x="351" y="294">champion, alternating seats</text>
+
+        <line class="arrow" x1="224" y1="84" x2="330" y2="84" marker-end="url(#ah-loop)"/>
+        <text class="t-cap" x="277" y="76" text-anchor="middle">plays</text>
+        <line class="arrow" x1="549" y1="84" x2="655" y2="84" marker-end="url(#ah-loop)"/>
+        <text class="t-cap" x="602" y="70" text-anchor="middle">+100k moves,</text>
+        <text class="t-cap" x="602" y="104" text-anchor="middle">each with the</text>
+        <text class="t-cap" x="602" y="118" text-anchor="middle">search's choice</text>
+        <line class="arrow" x1="765" y1="132" x2="765" y2="221" marker-end="url(#ah-loop)"/>
+        <text class="t-cap" x="775" y="180">trains</text>
+        <line class="arrow" x1="656" y1="270" x2="550" y2="270" marker-end="url(#ah-loop)"/>
+        <text class="t-cap" x="603" y="262" text-anchor="middle">challenger</text>
+        <path class="arrow hot" d="M331 270 L 115 270 L 115 133" marker-end="url(#ah-loop-hot)"/>
+        <text class="t-cap" x="125" y="200">wins by more than</text>
+        <text class="t-cap" x="125" y="216">one standard error:</text>
+        <text class="t-cap" x="125" y="232">new champion</text>
+        <line class="arrow" x1="440" y1="318" x2="440" y2="340" marker-end="url(#ah-loop)"/>
+        <text class="t-cap" x="452" y="340">otherwise discarded; its games stay in the window</text>
+      </svg>
+    </div>
+    <figcaption>One turn of the loop takes about 45 minutes on a gaming PC. The search is the expensive part and runs on the CPU; training the network takes a few minutes on the GPU.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">06</span><h2>Did it work?</h2></div>
+  <div class="col prose">
+    <p>Lost Cities is luck-heavy, so the test is head-to-head over many rounds, alternating who sits where and who starts. Every network below played 16,000 rounds against the iteration-4 network. The champion at iteration 44 finishes 11.5 points ahead per round, winning 60% of rounds. Over a three-round match that edge adds up.</p>
+  </div>
+  <figure>
+    <div class="frame chartbox" id="chartbox">
+      <svg id="chart" viewBox="0 0 880 342" tabindex="0" role="img" aria-label="Head-to-head points per round against the iteration-4 network, per training iteration. The champion line climbs from 0 to +11.5 at iteration 44, with plateaus around +5.8 and jumps after iterations 7, 15 and 32."><line class="grid" x1="52" x2="860" y1="271.8" y2="271.8"/><text class="t-tick" x="44" y="275.8" text-anchor="end">-4</text><line class="grid zero" x1="52" x2="860" y1="223.4" y2="223.4"/><text class="t-tick" x="44" y="227.4" text-anchor="end">0</text><line class="grid" x1="52" x2="860" y1="175.0" y2="175.0"/><text class="t-tick" x="44" y="179.0" text-anchor="end">+4</text><line class="grid" x1="52" x2="860" y1="126.6" y2="126.6"/><text class="t-tick" x="44" y="130.6" text-anchor="end">+8</text><line class="grid" x1="52" x2="860" y1="78.2" y2="78.2"/><text class="t-tick" x="44" y="82.2" text-anchor="end">+12</text><text class="t-tick" x="70.4" y="314" text-anchor="middle">5</text><text class="t-tick" x="162.2" y="314" text-anchor="middle">10</text><text class="t-tick" x="254.0" y="314" text-anchor="middle">15</text><text class="t-tick" x="345.8" y="314" text-anchor="middle">20</text><text class="t-tick" x="437.6" y="314" text-anchor="middle">25</text><text class="t-tick" x="529.5" y="314" text-anchor="middle">30</text><text class="t-tick" x="621.3" y="314" text-anchor="middle">35</text><text class="t-tick" x="713.1" y="314" text-anchor="middle">40</text><text class="t-tick" x="804.9" y="314" text-anchor="middle">45</text><text class="t-cap" x="456.0" y="334" text-anchor="middle">training iteration</text><text class="t-cap" x="44" y="20">points per round vs ei u4</text><line class="note" x1="107.1" x2="107.1" y1="40" y2="296"/><text class="t-cap" x="112.1" y="48">64 deals + network prior</text><line class="note" x1="254.0" x2="254.0" y1="56" y2="296"/><text class="t-cap" x="259.0" y="64">3× more training data</text><line class="note" x1="566.2" x2="566.2" y1="40" y2="296"/><text class="t-cap" x="571.2" y="48">fresh network each iteration, full rollouts</text><polyline class="line" points="52.0,223.4 107.1,207.9 143.8,191.3 162.2,192.5 180.5,181.3 235.6,185.6 254.0,167.1 290.7,157.7 327.5,159.0 364.2,157.8 400.9,149.1 419.3,154.4 474.4,153.1 529.5,152.9 566.2,133.4 602.9,130.2 639.6,119.6 676.4,115.0 731.5,95.3 749.8,95.0 768.2,87.2 786.5,84.6"/><circle class="rej" cx="70.4" cy="277.0" r="4"/><circle class="rej" cx="88.7" cy="264.8" r="4"/><circle class="rej" cx="125.5" cy="210.2" r="4"/><circle class="rej" cx="198.9" cy="187.6" r="4"/><circle class="rej" cx="217.3" cy="178.8" r="4"/><circle class="rej" cx="272.4" cy="164.0" r="4"/><circle class="rej" cx="309.1" cy="156.9" r="4"/><circle class="rej" cx="345.8" cy="156.4" r="4"/><circle class="rej" cx="382.5" cy="157.2" r="4"/><circle class="rej" cx="437.6" cy="150.8" r="4"/><circle class="rej" cx="456.0" cy="150.9" r="4"/><circle class="rej" cx="492.7" cy="156.4" r="4"/><circle class="rej" cx="511.1" cy="155.5" r="4"/><circle class="rej" cx="547.8" cy="156.2" r="4"/><circle class="rej" cx="584.5" cy="132.3" r="4"/><circle class="rej" cx="621.3" cy="123.8" r="4"/><circle class="rej" cx="658.0" cy="114.9" r="4"/><circle class="rej" cx="694.7" cy="109.1" r="4"/><circle class="rej" cx="713.1" cy="109.9" r="4"/><circle class="rej" cx="804.9" cy="84.1" r="4"/><circle class="rej" cx="823.3" cy="76.6" r="4"/><circle class="rej" cx="841.6" cy="72.5" r="4"/><circle class="champ" cx="52.0" cy="223.4" r="4.5"/><circle class="champ" cx="107.1" cy="207.9" r="4.5"/><circle class="champ" cx="143.8" cy="191.3" r="4.5"/><circle class="champ" cx="162.2" cy="192.5" r="4.5"/><circle class="champ" cx="180.5" cy="181.3" r="4.5"/><circle class="champ" cx="235.6" cy="185.6" r="4.5"/><circle class="champ" cx="254.0" cy="167.1" r="4.5"/><circle class="champ" cx="290.7" cy="157.7" r="4.5"/><circle class="champ" cx="327.5" cy="159.0" r="4.5"/><circle class="champ" cx="364.2" cy="157.8" r="4.5"/><circle class="champ" cx="400.9" cy="149.1" r="4.5"/><circle class="champ" cx="419.3" cy="154.4" r="4.5"/><circle class="champ" cx="474.4" cy="153.1" r="4.5"/><circle class="champ" cx="529.5" cy="152.9" r="4.5"/><circle class="champ" cx="566.2" cy="133.4" r="4.5"/><circle class="champ" cx="602.9" cy="130.2" r="4.5"/><circle class="champ" cx="639.6" cy="119.6" r="4.5"/><circle class="champ" cx="676.4" cy="115.0" r="4.5"/><circle class="champ" cx="731.5" cy="95.3" r="4.5"/><circle class="champ" cx="749.8" cy="95.0" r="4.5"/><circle class="champ" cx="768.2" cy="87.2" r="4.5"/><circle class="champ" cx="786.5" cy="84.6" r="4.5"/><text class="t-num strong" x="778.5" y="72.6" text-anchor="end">u44  +11.5</text><line id="xhair" class="xhair" x1="0" x2="0" y1="54" y2="296" visibility="hidden"/><rect id="hit" x="52" y="54" width="808" height="242" fill="transparent"/></svg>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+    <div class="legend" aria-hidden="true">
+      <span><i class="key line"></i>Champion after each accepted iteration</span>
+      <span><i class="key dot"></i>Rejected challenger</span>
+    </div>
+    <figcaption>Each standard error is about ±0.3 points. The flat stretch from iteration 17 to 31 is a real plateau; the vertical marks are the changes that broke each one. The last three challengers scored higher against u4 than the champion did but didn't beat u44 itself by enough to replace it. Hover or use the arrow keys for each iteration's numbers.</figcaption>
+    <details>
+      <summary>Show the data table</summary>
+      <div class="tablewrap"><table class="data">
+        <thead><tr><th>Iteration</th><th>vs ei u4</th><th>Std. error</th><th>Result</th></tr></thead>
+        <tbody><tr><td>5</td><td>-4.43</td><td>±0.38</td><td>rejected</td></tr><tr><td>6</td><td>-3.42</td><td>±0.38</td><td>rejected</td></tr><tr><td>7</td><td>+1.28</td><td>±0.35</td><td>champion</td></tr><tr><td>8</td><td>+1.09</td><td>±0.35</td><td>rejected</td></tr><tr><td>9</td><td>+2.65</td><td>±0.35</td><td>champion</td></tr><tr><td>10</td><td>+2.55</td><td>±0.35</td><td>champion</td></tr><tr><td>11</td><td>+3.48</td><td>±0.34</td><td>champion</td></tr><tr><td>12</td><td>+2.96</td><td>±0.34</td><td>rejected</td></tr><tr><td>13</td><td>+3.69</td><td>±0.34</td><td>rejected</td></tr><tr><td>14</td><td>+3.12</td><td>±0.34</td><td>champion</td></tr><tr><td>15</td><td>+4.65</td><td>±0.34</td><td>champion</td></tr><tr><td>16</td><td>+4.91</td><td>±0.34</td><td>rejected</td></tr><tr><td>17</td><td>+5.43</td><td>±0.34</td><td>champion</td></tr><tr><td>18</td><td>+5.50</td><td>±0.34</td><td>rejected</td></tr><tr><td>19</td><td>+5.32</td><td>±0.34</td><td>champion</td></tr><tr><td>20</td><td>+5.54</td><td>±0.34</td><td>rejected</td></tr><tr><td>21</td><td>+5.42</td><td>±0.34</td><td>champion</td></tr><tr><td>22</td><td>+5.47</td><td>±0.33</td><td>rejected</td></tr><tr><td>23</td><td>+6.14</td><td>±0.34</td><td>champion</td></tr><tr><td>24</td><td>+5.70</td><td>±0.34</td><td>champion</td></tr><tr><td>25</td><td>+6.00</td><td>±0.34</td><td>rejected</td></tr><tr><td>26</td><td>+5.99</td><td>±0.34</td><td>rejected</td></tr><tr><td>27</td><td>+5.81</td><td>±0.34</td><td>champion</td></tr><tr><td>28</td><td>+5.54</td><td>±0.33</td><td>rejected</td></tr><tr><td>29</td><td>+5.61</td><td>±0.34</td><td>rejected</td></tr><tr><td>30</td><td>+5.83</td><td>±0.33</td><td>champion</td></tr><tr><td>31</td><td>+5.55</td><td>±0.33</td><td>rejected</td></tr><tr><td>32</td><td>+7.44</td><td>±0.33</td><td>champion</td></tr><tr><td>33</td><td>+7.53</td><td>±0.34</td><td>rejected</td></tr><tr><td>34</td><td>+7.70</td><td>±0.34</td><td>champion</td></tr><tr><td>35</td><td>+8.23</td><td>±0.33</td><td>rejected</td></tr><tr><td>36</td><td>+8.58</td><td>±0.34</td><td>champion</td></tr><tr><td>37</td><td>+8.97</td><td>±0.34</td><td>rejected</td></tr><tr><td>38</td><td>+8.96</td><td>±0.34</td><td>champion</td></tr><tr><td>39</td><td>+9.45</td><td>±0.34</td><td>rejected</td></tr><tr><td>40</td><td>+9.38</td><td>±0.34</td><td>rejected</td></tr><tr><td>41</td><td>+10.59</td><td>±0.34</td><td>champion</td></tr><tr><td>42</td><td>+10.61</td><td>±0.34</td><td>champion</td></tr><tr><td>43</td><td>+11.26</td><td>±0.34</td><td>champion</td></tr><tr><td>44</td><td>+11.47</td><td>±0.34</td><td>champion</td></tr><tr><td>45</td><td>+11.51</td><td>±0.34</td><td>rejected</td></tr><tr><td>46</td><td>+12.13</td><td>±0.34</td><td>rejected</td></tr><tr><td>47</td><td>+12.47</td><td>±0.34</td><td>rejected</td></tr></tbody>
+      </table></div>
+    </details>
+  </figure>
+</section>
+
+<section>
+  <div class="step"><span class="n">07</span><h2>What unblocked it</h2></div>
+  <div class="col prose">
+    <p>Training stalled four times. Each fix came from measuring the problem first, usually by pitting two versions against each other.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>What we saw</th><th>What the measurement said</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>Two iterations in a row got worse</td><td>With 16 deals, the search played 12.5 points per round <i>worse</i> than the bare network</td><td>64 deals and the confidence bonus: the search became +9.6 better</td></tr>
+        <tr><td>Iterations barely moved the network</td><td>3 training passes changed nothing (−0.1); 20 passes gave +2.1</td><td>Train harder, on several iterations of data</td></tr>
+        <tr><td>The value estimate got worse on new games</td><td>Positions from the same round share one outcome, so long training memorised outcomes (error on unseen rounds 0.60 → 0.71)</td><td>Train the policy, then refit only the value layer</td></tr>
+        <tr><td>Stuck at +5.8 for 14 iterations</td><td>Fine-tuning the champion on more data: +0.3. A fresh network on the same data: +1.6</td><td>Retrain from scratch every iteration</td></tr>
+        <tr><td>The search weakened again</td><td>Short simulations (30 moves plus the value estimate) gave +2.5; full simulations +6.9</td><td>Simulate every deal to the end of the round</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="step"><span class="n">08</span><h2>Under the hood</h2></div>
+  <div class="col prose">
+    <p>Everything is plain Python on top of PyTorch. There is no reinforcement-learning framework: PPO, the search and the expert-iteration loop are about a thousand lines written for this game.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Piece</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td><b>PyTorch</b></td><td>The network, backpropagation (autograd), the Adam optimiser, learning-rate schedules, CUDA on the GPU, and the ONNX export</td></tr>
+        <tr><td><b>NumPy</b></td><td>Building the 429-number inputs in batches, storing each iteration's training data</td></tr>
+        <tr><td><b>multiprocessing</b></td><td>Running the self-play search on 7 CPU cores at once, the slowest part of every iteration</td></tr>
+        <tr><td><b>ONNX Runtime Web</b></td><td>Running the network in the browser; the game engine was ported to JavaScript and checked move for move against Python</td></tr>
+        <tr><td><b>Chart.js · pytest</b></td><td>The training dashboard; tests for the rules and the network inputs</td></tr>
+        <tr><td><b>Hardware</b></td><td>One gaming PC: an 8-core CPU and an RTX 3070 with 8 GB</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="step"><span class="n">09</span><h2>Further reading</h2></div>
+  <ul class="refs col">
+    <li><a href="https://arxiv.org/abs/1705.08439">Thinking Fast and Slow with Deep Learning and Tree Search</a> <span>· Anthony, Tian &amp; Barber, 2017. The expert-iteration idea.</span></li>
+    <li><a href="https://arxiv.org/abs/1712.01815">Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm</a> <span>· Silver et al., 2017. AlphaZero.</span></li>
+    <li><a href="https://arxiv.org/abs/1707.06347">Proximal Policy Optimization Algorithms</a> <span>· Schulman et al., 2017. PPO.</span></li>
+    <li>Understanding the Success of Perfect Information Monte Carlo Sampling in Game Tree Search <span>· Long, Sturtevant, Buro &amp; Furtak, AAAI 2010. Why imagined deals work in card games.</span></li>
+  </ul>
+</section>
+
+<footer>Figures come from the training run of 3–4 October 2026. The example position and its 256 simulated rounds are real outputs of the iteration-44 network.</footer>
+</div>
+
+<script>
+(() => {
+  const data = [[5, -4.43, 0.38, false], [6, -3.42, 0.38, false], [7, 1.28, 0.35, true], [8, 1.09, 0.35, false], [9, 2.65, 0.35, true], [10, 2.55, 0.35, true], [11, 3.48, 0.34, true], [12, 2.96, 0.34, false], [13, 3.69, 0.34, false], [14, 3.12, 0.34, true], [15, 4.65, 0.34, true], [16, 4.91, 0.34, false], [17, 5.43, 0.34, true], [18, 5.5, 0.34, false], [19, 5.32, 0.34, true], [20, 5.54, 0.34, false], [21, 5.42, 0.34, true], [22, 5.47, 0.33, false], [23, 6.14, 0.34, true], [24, 5.7, 0.34, true], [25, 6.0, 0.34, false], [26, 5.99, 0.34, false], [27, 5.81, 0.34, true], [28, 5.54, 0.33, false], [29, 5.61, 0.34, false], [30, 5.83, 0.33, true], [31, 5.55, 0.33, false], [32, 7.44, 0.33, true], [33, 7.53, 0.34, false], [34, 7.7, 0.34, true], [35, 8.23, 0.33, false], [36, 8.58, 0.34, true], [37, 8.97, 0.34, false], [38, 8.96, 0.34, true], [39, 9.45, 0.34, false], [40, 9.38, 0.34, false], [41, 10.59, 0.34, true], [42, 10.61, 0.34, true], [43, 11.26, 0.34, true], [44, 11.47, 0.34, true], [45, 11.51, 0.34, false], [46, 12.13, 0.34, false], [47, 12.47, 0.34, false]];
+  const [x0, x1, itLo, itHi, y0, y1, vLo, vHi] = [52, 860, 4, 48, 54, 296, -6, 14];
+  const svg = document.getElementById('chart');
+  const hit = document.getElementById('hit');
+  const xhair = document.getElementById('xhair');
+  const tip = document.getElementById('tip');
+  const box = document.getElementById('chartbox');
+  if (!svg || !hit) return;
+  const sx = i => x0 + (i - itLo) / (itHi - itLo) * (x1 - x0);
+  const sy = v => y1 - (v - vLo) / (vHi - vLo) * (y1 - y0);
+  let idx = data.length - 1;
+
+  function show(k) {
+    idx = Math.max(0, Math.min(data.length - 1, k));
+    const [it, d, se, acc] = data[idx];
+    const x = sx(it);
+    xhair.setAttribute('x1', x); xhair.setAttribute('x2', x); xhair.setAttribute('visibility', 'visible');
+    tip.textContent = '';
+    const b = document.createElement('b');
+    b.textContent = (d >= 0 ? '+' : '') + d.toFixed(1) + ' ± ' + se.toFixed(1);
+    tip.append(b, document.createTextNode('iteration ' + it + ' · ' + (acc ? 'champion' : 'rejected')));
+    tip.hidden = false;
+    const r = svg.getBoundingClientRect(), br = box.getBoundingClientRect();
+    const scale = r.width / svg.viewBox.baseVal.width;
+    let left = r.left - br.left + box.scrollLeft + x * scale + 12;
+    const top = r.top - br.top + sy(d) * scale - 54;
+    if (left + tip.offsetWidth > box.scrollWidth - 8) left -= tip.offsetWidth + 24;
+    tip.style.left = left + 'px';
+    tip.style.top = Math.max(4, top) + 'px';
+  }
+  function hide() { xhair.setAttribute('visibility', 'hidden'); tip.hidden = true; }
+  hit.addEventListener('pointermove', e => {
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+    const loc = p.matrixTransform(svg.getScreenCTM().inverse());
+    let best = 0;
+    data.forEach((row, k) => { if (Math.abs(sx(row[0]) - loc.x) < Math.abs(sx(data[best][0]) - loc.x)) best = k; });
+    show(best);
+  });
+  hit.addEventListener('pointerleave', hide);
+  svg.addEventListener('focus', () => show(idx));
+  svg.addEventListener('blur', hide);
+  svg.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { show(idx - 1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { show(idx + 1); e.preventDefault(); }
+  });
+})();
+</script>
+</body>
+</html>
