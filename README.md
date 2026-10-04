@@ -4,6 +4,8 @@ An engine and self-play-trained bots for **Lost Cities** (classic 2-player editi
 
 Everything runs locally: the game engine is pure Python, and the bot is a 0.8M-parameter MLP (3 MB) trained on a single RTX 3070.
 
+**[▶ Play it in your browser](https://gnabcel.github.io/lost-cities-ai/web/)**: no install, the bot runs on your machine.
+
 ![Playing against the bot](docs/play.png)
 
 ## Results
@@ -59,6 +61,16 @@ python -m venv .venv && .venv/bin/pip install torch numpy
 
 You play against the champion network plus the search (about 0.2 s per move on CPU). The *"What would the bot play?"* button shows the bot's suggestion for your position. `--model path/to.pt` pins a checkpoint; `--model heuristic` plays the rule-based bot.
 
+### Play in the browser (no Python)
+
+`web/` is a static version of the same page: the engine is ported to JavaScript (`web/engine.js`) and the network runs with [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) (`web/model.onnx`), with the same search on top (64 determinizations, about 1–2 s per move). It's published at **https://gnabcel.github.io/lost-cities-ai/web/**; locally:
+
+```bash
+python3 -m http.server 8000 --directory web     # open http://localhost:8000/
+```
+
+The port is checked against Python: `web/test_parity.js` compares legal moves, network inputs and final scores on states and full rounds dumped by `web/parity_fixture.py` (all identical), and in a browser the ONNX network plays exactly the same moves as PyTorch. `web/export_onnx.py` re-exports a new champion.
+
 ### Pit bots against each other
 
 ```bash
@@ -98,6 +110,7 @@ One expert-iteration step (1000 self-play rounds with search on 7 CPU cores, the
 | `lost_cities/expert_iter.py` | Expert-iteration loop: generate → distill → gate |
 | `lost_cities/tracker.py` | Evaluates checkpoints (vs heuristic and head-to-head) → `runs/summary.json` |
 | `lost_cities/play_server.py`, `play/` | Web UI to play against the bot |
+| `web/` | Browser-only version: JavaScript engine, ONNX network, same UI |
 | `dashboard/` | Training dashboard (reads `runs/summary.json`) |
 | `supervisor.sh`, `ei_args.txt` | Unattended training loop and its configuration |
 | `models/champion.pt` | Current best network (`ei u44`) |
