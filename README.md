@@ -32,7 +32,7 @@ Notes:
    - **Teacher** (`search.py`, `RolloutSearchBot`): for the network's top-4 candidate moves, sample 64 determinizations of the hidden cards, play each candidate and finish the round with the network playing both sides, and average the final score difference. Same determinizations for all candidates (common random numbers).
    - **Prior**: a candidate's score is `mean + 2 · log π(a)`, so the search only overrides the network when the evidence beats the noise. Training target: `π(a) · exp(mean / 2)`.
    - **Student**: every iteration a *fresh* network is trained from scratch on the search targets of the last 12 iterations (~1.2M decisions), then its value head is refit as a linear probe.
-   - **Gating**: the new network becomes champion only if it beats the current one by more than one standard error over 16,000 mirrored rounds.
+   - **Gating**: the new network becomes champion only if it beats the current one by more than one standard error over 16,000 rounds (alternating seats and who starts).
 
 ### Lessons learned along the way
 
