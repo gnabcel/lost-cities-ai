@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+# training artifacts (checkpoints, search data, logs) stay local; the shipped model lives in models/
+runs/
+*.log
+STOP

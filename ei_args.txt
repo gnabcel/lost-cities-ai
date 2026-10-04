@@ -1,0 +1,19 @@
+# Expert-iteration arguments (supervisor.sh reads them on every restart; one or more per line)
+#
+# History of the settings, all measured head-to-head:
+# - Search over u4 vs u4 alone (384 rounds): 16 dets: -12.5 ± 2.3 (iterations 5 and 6 rejected) ·
+#   64 dets: +2.2 · 64 dets + prior 2: +9.6 · 64 dets + prior 2 + depth 30: +10.5 at half the cost.
+# - Distillation on iteration 8 data (vs u7, 16000 rounds): 3 epochs 1e-4: -0.1 · 10/1e-4: +1.2 ·
+#   20/1e-4: +1.5 · 20/3e-4: +2.1 · 40/3e-4: +0.9 · 60/3e-4: -0.4.
+# - With 20 joint epochs the value head memorizes rounds (fresh-round MSE 0.60 -> 0.71);
+#   policy only + refitting the value layer: same policy, value 0.58-0.62.
+# - With one iteration of data it plateaued again (it12-14 ≈ 0); 3 iterations (300k): +1.5.
+#   Accept only if the gain beats 1 standard error.
+# - Plateau at ~+5.8 vs u4 from u23 on. A fresh network trained from scratch on 12 iterations
+#   (1.15M decisions): +1.6 vs u30 and +7.4 vs u4 (fine-tuning u30 on the same data: +0.3; 1024 wide: +0.5).
+#   Its value head is weaker, so the search with depth 30 gives +2.5 vs the net, with depth 0 +6.9.
+--rounds 1000 --procs 7 --scratch --epochs 15 --lr 1e-3 --keep-data 12 --eval-rounds 16000 --accept-se 1
+--value-epochs 0 --value-probe 3
+--dets 64 --prior 2 --depth 0
+--rollout-opps= --game-opps=
+--save-data

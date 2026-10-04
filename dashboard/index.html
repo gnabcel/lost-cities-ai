@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost Cities · Training</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --good: #006300;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --good: #0ca30c;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --good: #0ca30c;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 12px; }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .tile .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+  .tile .big { font-size: 30px; font-weight: 600; margin: 6px 0 2px; }
+  .tile .row { color: var(--text-secondary); font-size: 13px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-secondary); margin-left: auto; }
+  .badge.ok { color: var(--good); border-color: currentColor; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+  .chart { position: relative; height: 260px; }
+  .hists { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .hist-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+  select { font: inherit; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
+  .scroll { overflow-x: auto; }
+  .err { color: var(--text-secondary); padding: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Lost Cities · training</h1>
+    <span class="muted" id="updated">loading…</span>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card" id="anchor-card" style="margin-bottom:12px; display:none">
+    <h2>Real progress: head-to-head vs ei u4</h2>
+    <p class="sub" id="anchor-sub">Mean point diff per round vs ei u4, 16000 rounds per checkpoint. The line connects the accepted iterations (each one beat the previous one); the lone dots are the rejected ones.</p>
+    <div class="chart"><canvas id="c-anchor"></canvas></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Mean point diff vs heuristic</h2>
+      <p class="sub">Per round, 1000 rounds per checkpoint. Above 0 = beating it.</p>
+      <div class="chart"><canvas id="c-diff"></canvas></div>
+    </section>
+    <section class="card">
+      <h2>Rounds won vs heuristic</h2>
+      <p class="sub">The dashed line is 50%.</p>
+      <div class="chart"><canvas id="c-win"></canvas></div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-bottom:12px">
+    <h2>Distribution of the point diff per round</h2>
+    <p class="sub">How many rounds ended with each margin (10-point bins). The vertical line is 0.</p>
+    <div class="hists" id="hists"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Expeditions started per round</h2>
+      <p class="sub">The dashed line is the heuristic (average over all evals).</p>
+      <div class="chart"><canvas id="c-exp"></canvas></div>
+    </section>
+    <section class="card">
+      <h2>Policy entropy</h2>
+      <p class="sub">How much it explores. If it drops to ~0 it stops trying new moves.</p>
+      <div class="chart"><canvas id="c-ent"></canvas></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Play style (latest checkpoint)</h2>
+    <p class="sub">Per-round averages vs the heuristic.</p>
+    <div class="scroll"><table id="style"></table></div>
+  </section>
+</main>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const SLOTS = ['--series-1', '--series-2', '--series-3', '--series-4'];
+const runColor = (runs, run) => css(SLOTS[runs.indexOf(run) % SLOTS.length]);
+const fmt = (x, d = 1) => (x > 0 ? '+' : '') + x.toFixed(d);
+
+// Horizontal or vertical reference line
+const refLine = {
+  id: 'refLine',
+  afterDatasetsDraw(chart, _, opts) {
+    const { ctx, chartArea: a, scales } = chart;
+    ctx.save();
+    ctx.strokeStyle = css('--text-muted');
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    for (const r of opts.lines || []) {
+      ctx.beginPath();
+      if (r.y !== undefined) {
+        const y = scales.y.getPixelForValue(r.y);
+        ctx.moveTo(a.left, y); ctx.lineTo(a.right, y);
+      } else {
+        const x = scales.x.getPixelForValue(r.x);
+        ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom);
+      }
+      ctx.stroke();
+      if (r.label) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = css('--text-muted');
+        ctx.font = '11px system-ui, sans-serif';
+        if (r.y !== undefined) ctx.fillText(r.label, a.left + 6, scales.y.getPixelForValue(r.y) - 5);
+      }
+    }
+    ctx.restore();
+  }
+};
+Chart.register(refLine);
+
+function baseOpts(yTitle, extra = {}) {
+  const grid = css('--grid'), muted = css('--text-muted');
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+    plugins: {
+      legend: { labels: { color: css('--text-secondary'), boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3 } },
+      tooltip: { backgroundColor: css('--surface-1'), titleColor: css('--text-primary'), bodyColor: css('--text-secondary'),
+                 borderColor: css('--border'), borderWidth: 1, padding: 10 },
+      refLine: { lines: [] },
+    },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'update', color: muted }, grid: { color: grid }, ticks: { color: muted }, border: { color: css('--axis') } },
+      y: { title: { display: true, text: yTitle, color: muted }, grid: { color: grid }, ticks: { color: muted }, border: { color: css('--axis') } },
+    },
+    ...extra,
+  };
+}
+
+const charts = {};
+function lineChart(id, yTitle, lines, yOpts = {}) {
+  const o = baseOpts(yTitle);
+  o.plugins.refLine.lines = lines;
+  Object.assign(o.scales.y, yOpts);
+  charts[id] = new Chart(document.getElementById(id), { type: 'line', data: { datasets: [] }, options: o });
+}
+
+function setLines(id, runs, pick, fromLog = false) {
+  const ch = charts[id];
+  ch.data.datasets = runs.map(run => {
+    const color = runColor(runs, run);
+    return {
+      label: run, data: pick(run), borderColor: color, backgroundColor: color,
+      borderWidth: 2, pointRadius: fromLog ? 0 : 3, pointHoverRadius: 5, tension: 0.2,
+    };
+  });
+  ch.update('none');
+}
+
+let summary = null;
+const histSel = {};
+
+function render() {
+  const runs = Object.keys(summary.runs).filter(r => summary.runs[r].evals.length || summary.runs[r].log.length);
+  document.getElementById('updated').textContent =
+    'updated ' + new Date(summary.generated * 1000).toLocaleTimeString() + ' · refreshes every 15 s';
+
+  // tiles
+  document.getElementById('tiles').innerHTML = runs.map(run => {
+    const { evals, log } = summary.runs[run];
+    const last = evals[evals.length - 1];
+    const best = evals.reduce((b, e) => (!b || e.diff > b.diff ? e : b), null);
+    const lastLog = log[log.length - 1];
+    const beat = last && last.diff > 0;
+    return `<div class="card tile">
+      <div class="name"><span class="swatch" style="background:${runColor(runs, run)}"></span>${run}
+        <span class="badge ${beat ? 'ok' : ''}">${beat ? '✓ beats the heuristic' : 'not beating it yet'}</span></div>
+      <div class="big">${last ? fmt(last.diff) : '—'}</div>
+      <div class="row">${last ? `mean diff vs heuristic (±${last.diff_se.toFixed(1)}) · wins ${(last.win * 100).toFixed(1)}%` : 'no evals yet'}</div>
+      <div class="row">${best ? `best: ${fmt(best.diff)} at u${best.update}` : ''}</div>
+      <div class="row">${lastLog ? `u${lastLog.update} · ${(lastLog.samples / 1e6).toFixed(1)} M decisions · ${(lastLog.sec / 60).toFixed(0)} min` : ''}</div>
+    </div>`;
+  }).join('');
+
+  const evalPts = (key, scale = 1) => run => summary.runs[run].evals.map(e => ({ x: e.update, y: e[key] * scale }));
+  setLines('c-diff', runs, evalPts('diff'));
+  setLines('c-win', runs, evalPts('win', 100));
+  setLines('c-exp', runs, run => summary.runs[run].evals.map(e => ({ x: e.update, y: e.bot.expeditions })));
+  setLines('c-ent', runs, run => summary.runs[run].log.map(r => ({ x: r.update, y: r.entropy })), true);
+
+  const allEvals = runs.flatMap(r => summary.runs[r].evals);
+  if (allEvals.length) {
+    const h = allEvals.reduce((s, e) => s + e.heuristic.expeditions, 0) / allEvals.length;
+    charts['c-exp'].options.plugins.refLine.lines = [{ y: h, label: `heuristic ${h.toFixed(1)}` }];
+    charts['c-exp'].update('none');
+  }
+
+  renderAnchor();
+  renderHists(runs);
+  renderStyle(runs);
+}
+
+function renderAnchor() {
+  const a = summary.anchor;
+  const card = document.getElementById('anchor-card');
+  if (!a || !a.evals.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  if (!charts['c-anchor']) lineChart('c-anchor', 'points per round vs u' + a.ref, [{ y: 0, label: 'u' + a.ref }]);
+  const ch = charts['c-anchor'];
+  ch.options.scales.x.title.text = 'iteration';
+  const acc = new Set(a.accepted);
+  const champ = [{ x: a.ref, y: 0 }].concat(a.evals.filter(e => acc.has(e.update)).map(e => ({ x: e.update, y: e.diff })));
+  const rej = a.evals.filter(e => !acc.has(e.update)).map(e => ({ x: e.update, y: e.diff }));
+  const c1 = css('--series-1') || '#2a78d6', c2 = css('--text-muted') || '#999';
+  ch.data.datasets = [
+    { label: 'champions (accepted)', data: champ, borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0 },
+    { label: 'rejected', data: rej, borderColor: c2, backgroundColor: c2, showLine: false, pointRadius: 3, pointHoverRadius: 5 },
+  ];
+  ch.update('none');
+  const last = a.evals.filter(e => acc.has(e.update)).at(-1);
+  if (last) document.getElementById('anchor-sub').textContent =
+    `Current champion: u${last.update}, ${fmt(last.diff)} ± ${last.diff_se.toFixed(1)} points per round vs u${a.ref} (wins ${(last.win * 100).toFixed(1)}% of rounds; Lost Cities has a lot of luck). ` +
+    'The line connects the accepted iterations; the gray dots are the rejected ones. 16000 rounds per checkpoint.';
+}
+
+const histCharts = {};
+function renderHists(runs) {
+  const box = document.getElementById('hists');
+  let ymax = 0;
+  for (const run of runs) for (const e of summary.runs[run].evals) ymax = Math.max(ymax, ...e.hist);
+  for (const run of runs) {
+    const evals = summary.runs[run].evals;
+    if (!evals.length) continue;
+    if (!histCharts[run]) {
+      const div = document.createElement('div');
+      div.innerHTML = `<div class="hist-head"><span class="swatch" style="background:${runColor(runs, run)}"></span>
+        <strong>${run}</strong><select aria-label="checkpoint for ${run}"></select><span class="muted" data-stat></span></div>
+        <div class="chart" style="height:220px"><canvas></canvas></div>`;
+      box.appendChild(div);
+      const sel = div.querySelector('select');
+      sel.addEventListener('change', () => { histSel[run] = +sel.value; drawHist(run, runs, ymax); });
+      const o = baseOpts('rounds');
+      o.interaction = { mode: 'index', intersect: false };
+      o.plugins.legend = { display: false };
+      o.plugins.tooltip.callbacks = {
+        title: items => { const x = items[0].raw.x; return `diff ${x - 5} to ${x + 5}`; },
+        label: item => `${item.raw.y} rounds`,
+      };
+      o.scales.x.title.text = 'point diff in the round (bot − heuristic)';
+      histCharts[run] = { div, sel, chart: new Chart(div.querySelector('canvas'), {
+        type: 'bar', data: { datasets: [] }, options: o }) };
+    }
+    const { sel } = histCharts[run];
+    const prev = histSel[run];
+    const latest = evals[evals.length - 1].update;
+    const following = prev === undefined || prev === +sel.dataset.latest;
+    sel.innerHTML = evals.slice().reverse().map(e => `<option value="${e.update}">u${e.update}</option>`).join('');
+    sel.dataset.latest = latest;
+    histSel[run] = following ? latest : prev;
+    sel.value = histSel[run];
+    drawHist(run, runs, ymax);
+  }
+}
+
+function drawHist(run, runs, ymax) {
+  const e = summary.runs[run].evals.find(x => x.update === histSel[run]);
+  const { chart, div } = histCharts[run];
+  const color = runColor(runs, run);
+  chart.data.datasets = [{
+    data: e.hist.map((n, i) => ({ x: e.hist_edges[i] + 5, y: n })),
+    backgroundColor: color, borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom',
+    barPercentage: 1, categoryPercentage: 1, borderColor: css('--surface-1'), borderWidth: { left: 1, right: 1 },
+  }];
+  chart.options.scales.x.min = -150; chart.options.scales.x.max = 150;
+  chart.options.scales.y.max = Math.ceil(ymax / 20) * 20;
+  chart.options.plugins.refLine.lines = [{ x: 0 }];
+  div.querySelector('[data-stat]').textContent =
+    `mean ${fmt(e.diff)} · median ${fmt(e.diff_median, 0)} · wins ${(e.win * 100).toFixed(1)}%`;
+  chart.update('none');
+}
+
+function renderStyle(runs) {
+  const rows = [
+    ['Score per round', 'score', 1],
+    ['Expeditions started', 'expeditions', 2],
+    ['Expeditions short of 20', 'negative_exps', 2],
+    ['Wagers played', 'wagers', 2],
+    ['Cards played', 'cards_played', 1],
+    ['Expeditions with the 8-card bonus', 'bonus8', 3],
+  ];
+  const lasts = runs.map(r => summary.runs[r].evals.at(-1)).filter(Boolean);
+  const heads = runs.filter(r => summary.runs[r].evals.length);
+  const heur = lasts.at(-1)?.heuristic;
+  if (!heur) return;
+  document.getElementById('style').innerHTML =
+    `<tr><th></th>${heads.map((r, i) => `<th><span class="swatch" style="background:${runColor(runs, r)}"></span> ${r} (u${lasts[i].update})</th>`).join('')}<th>heuristic</th></tr>` +
+    rows.map(([label, k, d]) =>
+      `<tr><td>${label}</td>${lasts.map(e => `<td>${e.bot[k].toFixed(d)}</td>`).join('')}<td>${heur[k].toFixed(d)}</td></tr>`).join('');
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('../runs/summary.json?t=' + Date.now());
+    summary = await r.json();
+    render();
+  } catch (err) {
+    document.getElementById('updated').textContent = "couldn't read runs/summary.json: is the tracker running?";
+  }
+}
+
+lineChart('c-diff', 'points', [{ y: 0, label: 'even with the heuristic' }], { suggestedMax: 5 });
+lineChart('c-win', '% of rounds', [{ y: 50, label: '50%' }], { min: 0, max: 100 });
+lineChart('c-exp', 'expeditions', [], { min: 0, max: 5 });
+lineChart('c-ent', 'entropy', [], { min: 0 });
+refresh();
+setInterval(refresh, 15000);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => location.reload());
+</script>
+</body>
+</html>

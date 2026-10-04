@@ -1,0 +1,9 @@
+[project]
+name = "lost-cities"
+version = "0.1.0"
+description = "Lost Cities engine and bots (heuristic, ISMCTS, PPO and expert-iteration self-play)"
+requires-python = ">=3.10"
+dependencies = ["numpy", "torch>=2.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

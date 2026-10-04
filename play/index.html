@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost Cities vs Bot</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f3f1ea;
+    --surface: #fcfcfb;
+    --table: #e7e3d6;
+    --text: #1b1a17;
+    --text-2: #55534d;
+    --muted: #8a877f;
+    --border: rgba(27, 26, 23, 0.14);
+    --accent: #2a78d6;
+    --accent-soft: rgba(42, 120, 214, 0.16);
+    --good: #0b7a0b;
+    --bad: #b8322f;
+    --back: #5a4632;
+    --back-2: #7a6048;
+    /* expedition colors (from the game, fixed in both modes) */
+    --c0: #e1b320; --c0-ink: #2b2206;
+    --c1: #2f6fc1; --c1-ink: #ffffff;
+    --c2: #ecebe4; --c2-ink: #2a2925;
+    --c3: #2f8a4c; --c3-ink: #ffffff;
+    --c4: #c33c32; --c4-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #11110f;
+      --surface: #1c1c1a;
+      --table: #262521;
+      --text: #f4f3ee;
+      --text-2: #c3c2b7;
+      --muted: #8f8c84;
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #5a9cf0;
+      --accent-soft: rgba(90, 156, 240, 0.22);
+      --good: #38c038;
+      --bad: #ef6b67;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #11110f;
+    --surface: #1c1c1a;
+    --table: #262521;
+    --text: #f4f3ee;
+    --text-2: #c3c2b7;
+    --muted: #8f8c84;
+    --border: rgba(255, 255, 255, 0.12);
+    --accent: #5a9cf0;
+    --accent-soft: rgba(90, 156, 240, 0.22);
+    --good: #38c038;
+    --bad: #ef6b67;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 12px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  header h1 { font-size: 17px; margin: 0; }
+  .scoreline { display: flex; gap: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .scoreline b { color: var(--text); }
+  header .spacer { flex: 1; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+  .table { background: var(--table); border-radius: 14px; padding: 14px; border: 1px solid var(--border); }
+  .seat { display: flex; align-items: center; gap: 10px; min-height: 30px; flex-wrap: wrap; }
+  .seat .who { font-weight: 600; }
+  .seat .pts { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .backs { display: flex; }
+  .backs span { width: 16px; height: 24px; border-radius: 3px; background: repeating-linear-gradient(45deg, var(--back), var(--back) 3px, var(--back-2) 3px, var(--back-2) 6px); border: 1px solid rgba(0,0,0,.25); margin-left: -6px; }
+  .backs span:first-child { margin-left: 0; }
+  .known { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 12px; }
+
+  .cols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 70px; gap: 8px; }
+  .col { display: flex; flex-direction: column; align-items: center; min-height: 40px; border-radius: 10px; padding: 4px 0; }
+  .col.target { background: var(--accent-soft); outline: 2px dashed var(--accent); cursor: pointer; }
+  .col .colscore { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; height: 16px; }
+  .col .colscore.pos { color: var(--good); }
+  .col .colscore.neg { color: var(--bad); }
+  .stack { display: flex; flex-direction: column; align-items: center; }
+  .stack .card + .card { margin-top: -54px; }
+  .bot-cols .col { justify-content: flex-end; }
+
+  .middle { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 70px; gap: 8px; align-items: center; margin: 12px 0; padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .pile { display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 10px; padding: 4px 0; }
+  .pile.target, .deck.target { background: var(--accent-soft); outline: 2px dashed var(--accent); cursor: pointer; }
+  .pile .count { font-size: 11px; color: var(--muted); }
+  .slot { width: 56px; height: 80px; border-radius: 8px; border: 2px dashed; opacity: .55; }
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 10px; padding: 4px 0; }
+  .deck .back { width: 56px; height: 80px; border-radius: 8px; background: repeating-linear-gradient(45deg, var(--back), var(--back) 6px, var(--back-2) 6px, var(--back-2) 12px); border: 1px solid rgba(0,0,0,.3); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 18px; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+
+  .card { width: 56px; height: 80px; border-radius: 8px; position: relative; border: 1px solid rgba(0,0,0,.25); box-shadow: 0 1px 2px rgba(0,0,0,.18); flex: none; user-select: none; }
+  .card .corner { position: absolute; top: 3px; left: 6px; font-weight: 700; font-size: 15px; line-height: 1; }
+  .card .center { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 26px; padding-top: 10px; }
+  .card.wager .center { font-size: 30px; }
+  .card.sm { width: 30px; height: 42px; border-radius: 5px; }
+  .card.sm .corner { display: none; }
+  .card.sm .center { font-size: 14px; padding-top: 0; }
+  .card.sm.wager .center { font-size: 12px; }
+  .c0 { background: var(--c0); color: var(--c0-ink); }
+  .c1 { background: var(--c1); color: var(--c1-ink); }
+  .c2 { background: var(--c2); color: var(--c2-ink); }
+  .c3 { background: var(--c3); color: var(--c3-ink); }
+  .c4 { background: var(--c4); color: var(--c4-ink); }
+
+  .hand { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 12px; min-height: 92px; padding-top: 8px; }
+  .hand .card { cursor: pointer; transition: transform .12s; }
+  .hand .card:hover { transform: translateY(-4px); }
+  .hand .card.selected { transform: translateY(-12px); outline: 3px solid var(--accent); outline-offset: 2px; }
+  .hand .card.new::after { content: "new"; position: absolute; bottom: -16px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); }
+  .hand.locked .card { cursor: default; }
+  .hand.locked .card:hover { transform: none; }
+
+  .status { text-align: center; margin-top: 18px; min-height: 22px; font-weight: 600; }
+  .status .sub { font-weight: 400; color: var(--text-2); }
+
+  aside { display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .panel h2 { font-size: 13px; margin: 0 0 8px; color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .log { max-height: 320px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+  .log .bot { color: var(--text-2); }
+  .log .sep { color: var(--muted); margin-top: 6px; }
+  .hint-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 13px; }
+  .hint-row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
+  .bar { height: 6px; border-radius: 3px; background: var(--accent); margin-top: 3px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  table.rounds { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+  table.rounds td, table.rounds th { padding: 3px 4px; text-align: right; }
+  table.rounds td:first-child, table.rounds th:first-child { text-align: left; }
+  table.rounds th { color: var(--muted); font-weight: 500; }
+  table.rounds tr.total td { border-top: 1px solid var(--border); font-weight: 700; }
+
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; place-items: center; padding: 16px; z-index: 10; }
+  .overlay.show { display: grid; }
+  .dialog { background: var(--surface); border-radius: 14px; padding: 20px; max-width: 460px; width: 100%; border: 1px solid var(--border); }
+  .dialog h2 { margin: 0 0 6px; font-size: 20px; }
+  .dialog .reveal { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0 14px; }
+  .dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+  .options { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  select { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  .err { color: var(--bad); font-size: 13px; min-height: 18px; text-align: center; }
+  @media (max-width: 520px) {
+    .card { width: 48px; height: 70px; }
+    .stack .card + .card { margin-top: -48px; }
+    .slot, .deck .back { width: 48px; height: 70px; }
+    .middle, .cols { grid-template-columns: repeat(5, minmax(0, 1fr)) 54px; gap: 4px; }
+    .table { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lost Cities vs Bot</h1>
+  <div class="scoreline" id="scoreline"></div>
+  <div class="spacer"></div>
+  <button id="btn-new">New match</button>
+</header>
+
+<div class="layout">
+  <main class="table">
+    <div class="seat">
+      <span class="who">Bot</span><span class="pts" id="bot-pts"></span>
+      <div class="backs" id="bot-backs"></div>
+      <div class="known" id="bot-known"></div>
+    </div>
+    <div class="cols bot-cols" id="bot-cols"></div>
+    <div class="middle" id="middle"></div>
+    <div class="cols" id="my-cols"></div>
+    <div class="status" id="status"></div>
+    <div class="err" id="err"></div>
+    <div class="hand" id="hand"></div>
+    <div class="seat" style="justify-content:center; margin-top:14px">
+      <span class="who">You</span><span class="pts" id="my-pts"></span>
+    </div>
+  </main>
+
+  <aside>
+    <section class="panel">
+      <h2>Bot hint</h2>
+      <button id="btn-hint">What would the bot play?</button>
+      <div id="hint"></div>
+    </section>
+    <section class="panel">
+      <h2>Rounds</h2>
+      <table class="rounds" id="rounds"></table>
+    </section>
+    <section class="panel">
+      <h2>Moves</h2>
+      <div class="log" id="log"></div>
+    </section>
+    <p class="muted" id="model"></p>
+  </aside>
+</div>
+
+<div class="overlay" id="overlay"><div class="dialog" id="dialog"></div></div>
+
+<script>
+const COLOR_NAMES = ['Yellow', 'Blue', 'White', 'Green', 'Red'];
+const PLAY = 0, DISCARD = 60, DRAW_DECK = 120, DRAW_DISCARD = 121;
+let S = null, selected = null, busy = false;
+const $ = id => document.getElementById(id);
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'error');
+  return j;
+}
+
+function cardEl(c, cls = '') {
+  const d = document.createElement('div');
+  const txt = c.value === 0 ? '×' : c.value;
+  d.className = `card c${c.color} ${c.value === 0 ? 'wager' : ''} ${cls}`;
+  d.innerHTML = `<span class="corner">${txt}</span><span class="center">${txt}</span>`;
+  d.title = `${COLOR_NAMES[c.color]} ${c.value === 0 ? 'wager' : c.value}`;
+  return d;
+}
+
+const legal = a => S && S.legal.includes(a);
+// same-color wagers are interchangeable; the server accepts any of them
+const legalCard = (c, off) => legal(off + c.id) ||
+  (c.value === 0 && S.hand.some(h => h.value === 0 && h.color === c.color && legal(off + h.id)));
+
+function render() {
+  const myTurn = S.turn === 'human' && !S.round_over;
+  $('scoreline').innerHTML = `<span>Round <b>${S.round}</b>/${S.rounds}</span>
+    <span>Total: you <b>${S.totals[0]}</b> · bot <b>${S.totals[1]}</b></span>`;
+  $('bot-pts').textContent = `${S.score.bot >= 0 ? '+' : ''}${S.score.bot} pts this round`;
+  $('my-pts').textContent = `${S.score.human >= 0 ? '+' : ''}${S.score.human} pts this round`;
+  $('bot-backs').innerHTML = '<span></span>'.repeat(S.bot_hand_count);
+  const known = $('bot-known');
+  known.innerHTML = S.bot_known.length ? 'you know it holds:' : '';
+  S.bot_known.forEach(c => known.appendChild(cardEl(c, 'sm')));
+
+  // expeditions
+  for (const [who, box] of [['bot', $('bot-cols')], ['human', $('my-cols')]]) {
+    box.innerHTML = '';
+    for (let col = 0; col < 5; col++) {
+      const d = document.createElement('div');
+      d.className = 'col';
+      const cards = S.expeditions[who][col];
+      const sc = S.exp_scores[who][col];
+      const score = document.createElement('div');
+      score.className = 'colscore ' + (cards.length ? (sc >= 0 ? 'pos' : 'neg') : '');
+      score.textContent = cards.length ? (sc > 0 ? '+' : '') + sc : '';
+      const stack = document.createElement('div');
+      stack.className = 'stack';
+      cards.forEach(c => stack.appendChild(cardEl(c)));
+      if (who === 'bot') { d.append(score, stack); } else { d.append(stack, score); }
+      if (who === 'human' && myTurn && S.phase === 'play' && selected && selected.color === col && legalCard(selected, PLAY)) {
+        d.classList.add('target');
+        d.onclick = () => act(PLAY + selected.id);
+      }
+      box.appendChild(d);
+    }
+  }
+
+  // discard piles + deck
+  const mid = $('middle');
+  mid.innerHTML = '';
+  S.discards.forEach((p, col) => {
+    const d = document.createElement('div');
+    d.className = 'pile';
+    if (p.top) d.appendChild(cardEl(p.top));
+    else { const s = document.createElement('div'); s.className = 'slot'; s.style.borderColor = `var(--c${col})`; d.appendChild(s); }
+    const cnt = document.createElement('div');
+    cnt.className = 'count';
+    cnt.textContent = p.count ? `${p.count} ${p.count === 1 ? 'card' : 'cards'}` : 'discard pile';
+    d.appendChild(cnt);
+    d.title = p.count ? 'Pile: ' + p.cards.map(c => c.value === 0 ? 'wager' : c.value).join(', ') : `Discard pile: ${COLOR_NAMES[col].toLowerCase()}`;
+    if (myTurn && S.phase === 'play' && selected && selected.color === col && legalCard(selected, DISCARD)) {
+      d.classList.add('target'); d.onclick = () => act(DISCARD + selected.id);
+    }
+    if (myTurn && S.phase === 'draw' && legal(DRAW_DISCARD + col)) {
+      d.classList.add('target'); d.onclick = () => act(DRAW_DISCARD + col);
+    }
+    mid.appendChild(d);
+  });
+  const deck = document.createElement('div');
+  deck.className = 'deck';
+  deck.innerHTML = `<div class="back">${S.deck}</div><div class="count">deck</div>`;
+  if (myTurn && S.phase === 'draw') { deck.classList.add('target'); deck.onclick = () => act(DRAW_DECK); }
+  mid.appendChild(deck);
+
+  // hand
+  const hand = $('hand');
+  hand.innerHTML = '';
+  hand.classList.toggle('locked', !(myTurn && S.phase === 'play'));
+  S.hand.forEach(c => {
+    const el = cardEl(c, (selected && selected.id === c.id ? 'selected ' : '') + (c.id === S.last_drawn ? 'new' : ''));
+    el.onclick = () => {
+      if (!(myTurn && S.phase === 'play')) return;
+      selected = selected && selected.id === c.id ? null : c;
+      render();
+    };
+    hand.appendChild(el);
+  });
+
+  // status
+  let st = '';
+  if (S.round_over) st = 'Round over';
+  else if (!myTurn) st = 'The bot is thinking…';
+  else if (S.phase === 'play') st = selected
+    ? `${selected.value ? COLOR_NAMES[selected.color] + ' ' + selected.value : COLOR_NAMES[selected.color] + ' wager'}: <span class="sub">click your expedition to play it, or its pile to discard it</span>`
+    : 'Your turn: <span class="sub">pick a card from your hand</span>';
+  else st = 'Now draw: <span class="sub">from the deck or a discard pile</span>';
+  $('status').innerHTML = st;
+  $('btn-hint').disabled = !myTurn;
+
+  // rounds
+  let rows = '<tr><th></th><th>You</th><th>Bot</th></tr>';
+  S.history.forEach((r, i) => rows += `<tr><td>Round ${i + 1}</td><td>${r[0]}</td><td>${r[1]}</td></tr>`);
+  rows += `<tr class="total"><td>Total</td><td>${S.totals[0]}</td><td>${S.totals[1]}</td></tr>`;
+  $('rounds').innerHTML = rows;
+
+  // log
+  const log = $('log');
+  log.innerHTML = S.log.map(l => `<div class="${l.startsWith('Bot') ? 'bot' : l.startsWith('—') || l.startsWith('End') ? 'sep' : ''}">${l}</div>`).join('');
+  log.scrollTop = log.scrollHeight;
+  $('model').textContent = `Bot: ${S.model}`;
+
+  if (S.round_over) showRoundOver(); else $('overlay').classList.remove('show');
+}
+
+function showRoundOver() {
+  const [h, b] = S.history[S.history.length - 1];
+  const dlg = $('dialog');
+  const verdict = h > b ? 'You won the round!' : h < b ? 'The bot won the round' : 'Tie';
+  let html = `<h2>${verdict}</h2><p>You <b>${h}</b> · Bot <b>${b}</b></p>`;
+  if (S.match_over) {
+    const [th, tb] = S.totals;
+    html = `<h2>${th > tb ? 'You won the match! 🎉' : th < tb ? 'The bot won the match' : 'Match tied'}</h2>
+      <p>Total: you <b>${th}</b> · bot <b>${tb}</b></p>` + `<p class="muted">Last round: you ${h} · bot ${b}</p>`;
+  }
+  html += `<div class="muted">The bot's hand was:</div><div class="reveal" id="reveal"></div>`;
+  html += `<div class="actions">${S.match_over ? '<button class="primary" id="dlg-new">Play again</button>' : '<button class="primary" id="dlg-next">Next round</button>'}</div>`;
+  dlg.innerHTML = html;
+  (S.bot_hand || []).forEach(c => $('reveal').appendChild(cardEl(c, 'sm')));
+  if (S.match_over) $('dlg-new').onclick = openNew;
+  else $('dlg-next').onclick = async () => { S = await api('/api/next_round', {}); selected = null; render(); runBot(); };
+  $('overlay').classList.add('show');
+}
+
+function openNew() {
+  $('dialog').innerHTML = `<h2>New match</h2>
+    <div class="options">
+      <label>Rounds <select id="opt-rounds"><option>1</option><option>2</option><option selected>3</option></select></label>
+      <label>Goes first <select id="opt-starts"><option value="human">you</option><option value="bot">the bot</option></select></label>
+    </div>
+    <p class="muted">You're playing the best bot trained so far. Before each move it imagines 64 possible deals of the cards it can't see and simulates how the round ends with its best options.</p>
+    <div class="actions"><button id="dlg-cancel">Cancel</button><button class="primary" id="dlg-go">Start</button></div>`;
+  $('overlay').classList.add('show');
+  $('dlg-cancel').onclick = () => { $('overlay').classList.remove('show'); if (S.round_over) render(); };
+  $('dlg-go').onclick = async () => {
+    S = await api('/api/new', { rounds: +$('opt-rounds').value, starts: $('opt-starts').value });
+    selected = null; $('hint').innerHTML = ''; render(); runBot();
+  };
+}
+
+async function act(a) {
+  if (busy) return;
+  $('err').textContent = '';
+  try {
+    S = await api('/api/action', { action: a });
+    selected = null;
+    $('hint').innerHTML = '';
+    render();
+    runBot();
+  } catch (e) { $('err').textContent = e.message; }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function runBot() {
+  if (busy) return;
+  busy = true;
+  try {
+    while (S.turn === 'bot' && !S.round_over) {
+      await sleep(550);
+      S = await api('/api/bot', {});
+      render();
+    }
+  } finally { busy = false; }
+}
+
+$('btn-new').onclick = openNew;
+$('btn-hint').onclick = async () => {
+  const h = await api('/api/hint');
+  const box = $('hint');
+  if (!h.options || !h.options.length) { box.innerHTML = '<p class="muted">Not available for this bot.</p>'; return; }
+  box.innerHTML = `<div class="hint-list">${h.options.map(o => `
+    <div class="hint-row"><div>${o.text}<div class="bar" style="width:${Math.max(4, o.prob * 100)}%"></div></div>
+    <div style="text-align:right">${Math.round(o.prob * 100)}%</div></div>`).join('')}</div>
+    <p class="muted">The bot expects you to finish the round ${h.value >= 0 ? 'ahead' : 'behind'} by ~${Math.abs(h.value)} pts.</p>`;
+};
+
+(async () => { S = await api('/api/state'); render(); runBot(); })();
+</script>
+</body>
+</html>

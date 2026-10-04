@@ -1,0 +1,10 @@
+{
+  "checkpoint": "ei u44",
+  "architecture": "MLP 429 -> 512 -> 512 -> 512, policy head (126 actions) + value head",
+  "observation_features": 2,
+  "vs_ei_u4_points_per_round": 11.47,
+  "vs_ei_u4_round_win_rate": 0.598,
+  "vs_heuristic_points_per_round": 30.3,
+  "vs_heuristic_round_win_rate": 0.803,
+  "head_to_head_rounds": 16000
+}
