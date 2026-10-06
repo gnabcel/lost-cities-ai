@@ -102,16 +102,15 @@ def action_text(a: int) -> str:
     return f"draw from the {COLOR_NAMES[a - DRAW_DISCARD_OFFSET].lower()} discard pile"
 
 
-def describe(a: int, who: str) -> str:
-    verb = {"You": ("played", "discarded", "drew from the deck", "drew"),
-            "Bot": ("played", "discarded", "drew from the deck", "drew")}[who]
+def describe(a: int, who: str, drawn: int | None = None) -> str:
+    """drawn: the card that was drawn, or None when the reader mustn't see it (the bot's deck draws)."""
     if a < DISCARD_OFFSET:
-        return f"{who} {verb[0]} {card_name(a)}"
+        return f"{who} played {card_name(a)}"
     if a < DRAW_DECK:
-        return f"{who} {verb[1]} {card_name(a - DISCARD_OFFSET)}"
+        return f"{who} discarded {card_name(a - DISCARD_OFFSET)}"
     if a == DRAW_DECK:
-        return f"{who} {verb[2]}"
-    return f"{who} {verb[3]} from the {COLOR_NAMES[a - DRAW_DISCARD_OFFSET].lower()} discard pile"
+        return f"{who} drew from the deck" if drawn is None else f"{who} drew {card_name(drawn)} from the deck"
+    return f"{who} took {card_name(drawn)} from the discard pile"
 
 
 class Match:
@@ -152,12 +151,14 @@ class Match:
 
     def apply(self, a: int, who: str):
         s = self.state
-        before = set(s.hands[s.current])
-        self.record["actions"].append([s.current, a])
+        p = s.current
+        before = set(s.hands[p])
+        self.record["actions"].append([p, a])
         s.step(a)
-        if a >= DRAW_DECK and who == "You":
-            self.last_drawn = next(iter(set(s.hands[HUMAN]) - before), None)
-        self.log.append(describe(a, who))
+        drawn = next(iter(set(s.hands[p]) - before), None) if a >= DRAW_DECK else None
+        if drawn is not None and p == HUMAN:
+            self.last_drawn = drawn
+        self.log.append(describe(a, who, None if a == DRAW_DECK and p == BOT else drawn))
         if s.done:
             h, b = s.score(HUMAN), s.score(BOT)
             self.history.append((h, b))

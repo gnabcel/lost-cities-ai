@@ -20,11 +20,12 @@ function actionText(a) {
   return `draw from the ${LC.COLOR_NAMES[a - LC.DRAW_DISCARD_OFFSET].toLowerCase()} discard pile`;
 }
 
-function describe(a, who) {
+// drawn: the card that was drawn, or null when the reader mustn't see it (the bot's deck draws)
+function describe(a, who, drawn = null) {
   if (a < LC.DISCARD_OFFSET) return `${who} played ${cardName(a)}`;
   if (a < LC.DRAW_DECK) return `${who} discarded ${cardName(a - LC.DISCARD_OFFSET)}`;
-  if (a === LC.DRAW_DECK) return `${who} drew from the deck`;
-  return `${who} drew from the ${LC.COLOR_NAMES[a - LC.DRAW_DISCARD_OFFSET].toLowerCase()} discard pile`;
+  if (a === LC.DRAW_DECK) return drawn === null ? `${who} drew from the deck` : `${who} drew ${cardName(drawn)} from the deck`;
+  return `${who} took ${cardName(drawn)} from the discard pile`;
 }
 
 const byColorValue = (a, b) => LC.cardColor(a) - LC.cardColor(b) || LC.cardValue(a) - LC.cardValue(b) || a - b;
@@ -62,10 +63,11 @@ class Match {
   }
 
   apply(a, who) {
-    const s = this.state, before = new Set(s.hands[s.current]);
+    const s = this.state, p = s.current, before = new Set(s.hands[p]);
     s.step(a);
-    if (a >= LC.DRAW_DECK && who === 'You') this.lastDrawn = s.hands[HUMAN].find(c => !before.has(c)) ?? null;
-    this.log.push(describe(a, who));
+    const drawn = a >= LC.DRAW_DECK ? s.hands[p].find(c => !before.has(c)) ?? null : null;
+    if (drawn !== null && p === HUMAN) this.lastDrawn = drawn;
+    this.log.push(describe(a, who, a === LC.DRAW_DECK && p === BOT ? null : drawn));
     if (s.done) {
       const h = s.score(HUMAN), b = s.score(BOT);
       this.history.push([h, b]);

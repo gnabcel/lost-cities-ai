@@ -111,11 +111,16 @@
   .c3 { background: var(--c3); color: var(--c3-ink); }
   .c4 { background: var(--c4); color: var(--c4-ink); }
 
-  .hand { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 12px; min-height: 92px; padding-top: 8px; }
+  .hand { display: flex; gap: 18px 6px; flex-wrap: wrap; justify-content: center; margin-top: 12px; min-height: 92px; padding-top: 16px; }
   .hand .card { cursor: pointer; transition: transform .12s; }
   .hand .card:hover { transform: translateY(-4px); }
   .hand .card.selected { transform: translateY(-12px); outline: 3px solid var(--accent); outline-offset: 2px; }
-  .hand .card.new::after { content: "new"; position: absolute; bottom: -16px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); }
+  /* the card you just drew: ring + badge, and it drops in once when it arrives */
+  .hand .card.new { box-shadow: 0 0 0 2px var(--table), 0 0 0 4px var(--text); }
+  .hand .card.new::after { content: "NEW"; position: absolute; top: -14px; left: 50%; transform: translateX(-50%); padding: 0 5px; border-radius: 6px; background: var(--text); color: var(--page); font-size: 9px; font-weight: 700; letter-spacing: .05em; line-height: 14px; pointer-events: none; }
+  .hand .card.pop { animation: pop .6s ease-out; }
+  @keyframes pop { from { transform: translateY(-22px) scale(1.12); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .hand .card.pop { animation: none; } }
   .hand.locked .card { cursor: default; }
   .hand.locked .card:hover { transform: none; }
 
@@ -128,6 +133,7 @@
   .log { max-height: 320px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
   .log .bot { color: var(--text-2); }
   .log .sep { color: var(--muted); margin-top: 6px; }
+  .log .drew { font-weight: 600; }
   .hint-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 13px; }
   .hint-row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
   .bar { height: 6px; border-radius: 3px; background: var(--accent); margin-top: 3px; }
@@ -205,7 +211,7 @@
 <script>
 const COLOR_NAMES = ['Yellow', 'Blue', 'White', 'Green', 'Red'];
 const PLAY = 0, DISCARD = 60, DRAW_DECK = 120, DRAW_DISCARD = 121;
-let S = null, selected = null, busy = false;
+let S = null, selected = null, busy = false, shownDrawn = null;
 const $ = id => document.getElementById(id);
 
 async function api(path, body) {
@@ -295,8 +301,10 @@ function render() {
   const hand = $('hand');
   hand.innerHTML = '';
   hand.classList.toggle('locked', !(myTurn && S.phase === 'play'));
+  const pop = S.last_drawn !== shownDrawn;  // animate only the render where the card arrives
+  shownDrawn = S.last_drawn;
   S.hand.forEach(c => {
-    const el = cardEl(c, (selected && selected.id === c.id ? 'selected ' : '') + (c.id === S.last_drawn ? 'new' : ''));
+    const el = cardEl(c, (selected && selected.id === c.id ? 'selected ' : '') + (c.id === S.last_drawn ? (pop ? 'new pop' : 'new') : ''));
     el.onclick = () => {
       if (!(myTurn && S.phase === 'play')) return;
       selected = selected && selected.id === c.id ? null : c;
@@ -324,7 +332,7 @@ function render() {
 
   // log
   const log = $('log');
-  log.innerHTML = S.log.map(l => `<div class="${l.startsWith('Bot') ? 'bot' : l.startsWith('—') || l.startsWith('End') ? 'sep' : ''}">${l}</div>`).join('');
+  log.innerHTML = S.log.map(l => `<div class="${l.startsWith('Bot') ? 'bot' : l.startsWith('—') || l.startsWith('End') ? 'sep' : l.startsWith('You drew') || l.startsWith('You took') ? 'drew' : ''}">${l}</div>`).join('');
   log.scrollTop = log.scrollHeight;
   $('model').textContent = `Bot: ${S.model}`;
 
