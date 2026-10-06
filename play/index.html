@@ -77,6 +77,7 @@
   .backs { display: flex; }
   .backs span { width: 16px; height: 24px; border-radius: 3px; background: repeating-linear-gradient(45deg, var(--back), var(--back) 3px, var(--back-2) 3px, var(--back-2) 6px); border: 1px solid rgba(0,0,0,.25); margin-left: -6px; }
   .backs span:first-child { margin-left: 0; }
+  .table > .seat:first-child { min-height: 44px; }
   .known { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 12px; }
 
   .cols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 70px; gap: 8px; }
@@ -93,6 +94,8 @@
   .pile { display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 10px; padding: 4px 0; }
   .pile.target, .deck.target { background: var(--accent-soft); outline: 2px dashed var(--accent); cursor: pointer; }
   .pile .count { font-size: 11px; color: var(--muted); }
+  .pile-cards { position: relative; }
+  .pile-cards .under { position: absolute; top: 0; left: 0; }
   .slot { width: 56px; height: 80px; border-radius: 8px; border: 2px dashed; opacity: .55; }
   .deck { display: flex; flex-direction: column; align-items: center; gap: 2px; border-radius: 10px; padding: 4px 0; }
   .deck .back { width: 56px; height: 80px; border-radius: 8px; background: repeating-linear-gradient(45deg, var(--back), var(--back) 6px, var(--back-2) 6px, var(--back-2) 12px); border: 1px solid rgba(0,0,0,.3); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 18px; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
@@ -115,12 +118,12 @@
   .hand .card { cursor: pointer; transition: transform .12s; }
   .hand .card:hover { transform: translateY(-4px); }
   .hand .card.selected { transform: translateY(-12px); outline: 3px solid var(--accent); outline-offset: 2px; }
-  /* the card you just drew: ring + badge, and it drops in once when it arrives */
+  /* the card you just drew: ring + badge */
   .hand .card.new { box-shadow: 0 0 0 2px var(--table), 0 0 0 4px var(--text); }
   .hand .card.new::after { content: "NEW"; position: absolute; top: -14px; left: 50%; transform: translateX(-50%); padding: 0 5px; border-radius: 6px; background: var(--text); color: var(--page); font-size: 9px; font-weight: 700; letter-spacing: .05em; line-height: 14px; pointer-events: none; }
-  .hand .card.pop { animation: pop .6s ease-out; }
-  @keyframes pop { from { transform: translateY(-22px) scale(1.12); } to { transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .hand .card.pop { animation: none; } }
+  /* motion: a card in flight rides above the table; .ghost is a face-down card in flight */
+  .card.flying { z-index: 5; box-shadow: 0 10px 22px rgba(0,0,0,.28); }
+  .ghost { position: fixed; z-index: 6; pointer-events: none; border-radius: 8px; border: 1px solid rgba(0,0,0,.3); box-shadow: 0 10px 22px rgba(0,0,0,.28); background: repeating-linear-gradient(45deg, var(--back), var(--back) 6px, var(--back-2) 6px, var(--back-2) 12px); }
   .hand.locked .card { cursor: default; }
   .hand.locked .card:hover { transform: none; }
 
@@ -134,6 +137,24 @@
   .log .bot { color: var(--text-2); }
   .log .sep { color: var(--muted); margin-top: 6px; }
   .log .drew { font-weight: 600; }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -0.2em; margin-right: 6px; }
+  #btn-hint { width: 100%; }
+  #btn-hint.pulse:not(:disabled) { animation: pulse 1.8s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
+  .status .ask { border: none; background: none; padding: 0 0 0 10px; color: var(--accent); font-weight: 600; }
+  .status .ask:hover { text-decoration: underline; }
+
+  /* guided tour: a spotlight that slides between parts of the table, with a tip next to it */
+  .tour { position: fixed; inset: 0; z-index: 20; }
+  .tour-spot { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); pointer-events: none; transition: left .35s ease, top .35s ease, width .35s ease, height .35s ease; }
+  .tour-tip { position: fixed; width: min(320px, calc(100vw - 32px)); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: 0 12px 32px rgba(0,0,0,.3); animation: tip-in .25s ease-out; }
+  .tour-tip .step { font-size: 12px; color: var(--muted); }
+  .tour-tip h3 { margin: 2px 0 6px; font-size: 16px; }
+  .tour-tip p { margin: 0; color: var(--text-2); }
+  .tour-nav { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  .tour-nav .skip { border: none; background: none; padding: 6px 0; color: var(--muted); margin-right: auto; }
+  @keyframes tip-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } .tour-tip, #btn-hint.pulse:not(:disabled) { animation: none; } }
   .hint-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 13px; }
   .hint-row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
   .bar { height: 6px; border-radius: 3px; background: var(--accent); margin-top: 3px; }
@@ -167,6 +188,7 @@
   <h1>Lost Cities vs Bot</h1>
   <div class="scoreline" id="scoreline"></div>
   <div class="spacer"></div>
+  <button id="btn-help">How to play</button>
   <button id="btn-new">New match</button>
 </header>
 
@@ -191,7 +213,7 @@
   <aside>
     <section class="panel">
       <h2>Bot hint</h2>
-      <button id="btn-hint">What would the bot play?</button>
+      <button class="primary" id="btn-hint"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>What would the bot play?</button>
       <div id="hint"></div>
     </section>
     <section class="panel">
@@ -211,7 +233,7 @@
 <script>
 const COLOR_NAMES = ['Yellow', 'Blue', 'White', 'Green', 'Red'];
 const PLAY = 0, DISCARD = 60, DRAW_DECK = 120, DRAW_DISCARD = 121;
-let S = null, selected = null, busy = false, shownDrawn = null;
+let S = null, selected = null, busy = false;
 const $ = id => document.getElementById(id);
 
 async function api(path, body) {
@@ -228,6 +250,7 @@ function cardEl(c, cls = '') {
   d.className = `card c${c.color} ${c.value === 0 ? 'wager' : ''} ${cls}`;
   d.innerHTML = `<span class="corner">${txt}</span><span class="center">${txt}</span>`;
   d.title = `${COLOR_NAMES[c.color]} ${c.value === 0 ? 'wager' : c.value}`;
+  d.dataset.id = c.id;
   return d;
 }
 
@@ -236,7 +259,9 @@ const legal = a => S && S.legal.includes(a);
 const legalCard = (c, off) => legal(off + c.id) ||
   (c.value === 0 && S.hand.some(h => h.value === 0 && h.color === c.color && legal(off + h.id)));
 
-function render() {
+// animate: cards glide from where they were before this render to where they are now
+function render(animate = false) {
+  const prev = animate && !calm.matches ? snapshot() : null;
   const myTurn = S.turn === 'human' && !S.round_over;
   $('scoreline').innerHTML = `<span>Round <b>${S.round}</b>/${S.rounds}</span>
     <span>Total: you <b>${S.totals[0]}</b> · bot <b>${S.totals[1]}</b></span>`;
@@ -276,7 +301,13 @@ function render() {
   S.discards.forEach((p, col) => {
     const d = document.createElement('div');
     d.className = 'pile';
-    if (p.top) d.appendChild(cardEl(p.top));
+    if (p.top) {
+      const cards = document.createElement('div');
+      cards.className = 'pile-cards';
+      if (p.count > 1) cards.appendChild(cardEl(p.cards[p.count - 2], 'under'));
+      cards.appendChild(cardEl(p.top));
+      d.appendChild(cards);
+    }
     else { const s = document.createElement('div'); s.className = 'slot'; s.style.borderColor = `var(--c${col})`; d.appendChild(s); }
     const cnt = document.createElement('div');
     cnt.className = 'count';
@@ -301,14 +332,12 @@ function render() {
   const hand = $('hand');
   hand.innerHTML = '';
   hand.classList.toggle('locked', !(myTurn && S.phase === 'play'));
-  const pop = S.last_drawn !== shownDrawn;  // animate only the render where the card arrives
-  shownDrawn = S.last_drawn;
   S.hand.forEach(c => {
-    const el = cardEl(c, (selected && selected.id === c.id ? 'selected ' : '') + (c.id === S.last_drawn ? (pop ? 'new pop' : 'new') : ''));
+    const el = cardEl(c, (selected && selected.id === c.id ? 'selected ' : '') + (c.id === S.last_drawn ? 'new' : ''));
     el.onclick = () => {
       if (!(myTurn && S.phase === 'play')) return;
       selected = selected && selected.id === c.id ? null : c;
-      render();
+      render(true);
     };
     hand.appendChild(el);
   });
@@ -321,8 +350,11 @@ function render() {
     ? `${selected.value ? COLOR_NAMES[selected.color] + ' ' + selected.value : COLOR_NAMES[selected.color] + ' wager'}: <span class="sub">click your expedition to play it, or its pile to discard it</span>`
     : 'Your turn: <span class="sub">pick a card from your hand</span>';
   else st = 'Now draw: <span class="sub">from the deck or a discard pile</span>';
+  if (myTurn) st += `<button class="ask" id="ask">${$('btn-hint').querySelector('.icon').outerHTML}Ask the bot</button>`;
   $('status').innerHTML = st;
+  if (myTurn) $('ask').onclick = showHint;
   $('btn-hint').disabled = !myTurn;
+  $('btn-hint').classList.toggle('pulse', !store.get('lc.hintUsed'));
 
   // rounds
   let rows = '<tr><th></th><th>You</th><th>Bot</th></tr>';
@@ -336,7 +368,83 @@ function render() {
   log.scrollTop = log.scrollHeight;
   $('model').textContent = `Bot: ${S.model}`;
 
+  if (prev) animateFrom(prev);
   if (S.round_over) showRoundOver(); else $('overlay').classList.remove('show');
+}
+
+// --- motion (FLIP): measure every card before a render, then play each one from its old place ---
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+const EASE = 'cubic-bezier(.25,.8,.3,1)';
+const center = r => [r.left + r.width / 2, r.top + r.height / 2];
+
+function snapshot() {
+  const cards = new Map();
+  document.querySelectorAll('main.table [data-id]').forEach(el => cards.set(el.dataset.id, el.getBoundingClientRect()));
+  const back = $('bot-backs').lastElementChild, deck = document.querySelector('#middle .deck .back');
+  return { cards, back: back && back.getBoundingClientRect(), deck: deck && deck.getBoundingClientRect(),
+           botCount: $('bot-backs').children.length, deckCount: deck ? +deck.textContent : 0 };
+}
+
+// transforms that put an element whose box is `to` over the box `from`, and halfway there;
+// long trips go in an arc, short shuffles in a straight line
+function path(from, to) {
+  const [fx, fy] = center(from), [tx, ty] = center(to);
+  const dx = fx - tx, dy = fy - ty, s = from.width / to.width, dist = Math.hypot(dx, dy);
+  const lift = dist > 150 ? Math.min(40, dist / 8) : 0;
+  return { dx, dy, s, lift, start: `translate(${dx}px, ${dy}px) scale(${s})`,
+           mid: `translate(${dx / 2}px, ${dy / 2 - lift}px) scale(${(s + 1) / 2 + (lift ? .06 : 0)})` };
+}
+
+function ghostAt(r, radius) {
+  const g = document.createElement('div');
+  g.className = 'ghost';
+  Object.assign(g.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, borderRadius: radius });
+  document.body.appendChild(g);
+  return g;
+}
+
+// a face-up card moves from `from` to its place
+function glide(el, from) {
+  const p = path(from, el.getBoundingClientRect());
+  if (Math.abs(p.dx) < 1 && Math.abs(p.dy) < 1 && Math.abs(p.s - 1) < .01) return;
+  const frames = p.lift ? [{ transform: p.start }, { transform: p.mid }, { transform: 'none' }] : [{ transform: p.start }, { transform: 'none' }];
+  if (p.lift) el.classList.add('flying');
+  el.animate(frames, { duration: p.lift ? 420 : 260, easing: EASE }).finished
+    .then(() => el.classList.remove('flying'), () => {});
+}
+
+// a face-down card leaves `from`, turns over halfway and lands face up on el
+function reveal(el, from) {
+  const to = el.getBoundingClientRect(), p = path(from, to);
+  const turned = `${p.mid} scaleX(0)`, timing = { duration: 560, easing: EASE };
+  const g = ghostAt(to, '8px');
+  g.animate([{ transform: p.start }, { transform: turned, offset: .5 }, { transform: turned }], timing).finished
+    .then(() => g.remove(), () => g.remove());
+  el.classList.add('flying');
+  el.animate([{ transform: turned }, { transform: turned, offset: .5 }, { transform: 'none' }], timing).finished
+    .then(() => el.classList.remove('flying'), () => {});
+}
+
+// the bot drew from the deck: a face-down card goes up into its hand
+function toBotHand(from) {
+  const back = $('bot-backs').lastElementChild;
+  if (!back || !from) return;
+  const to = back.getBoundingClientRect(), p = path(from, to), g = ghostAt(to, '3px');
+  back.style.visibility = 'hidden';
+  const done = () => { g.remove(); back.style.visibility = ''; };
+  g.animate([{ transform: p.start }, { transform: p.mid }, { transform: 'none' }], { duration: 460, easing: EASE }).finished.then(done, done);
+}
+
+function animateFrom(prev) {
+  document.querySelectorAll('main.table [data-id]').forEach(el => {
+    const was = prev.cards.get(el.dataset.id);
+    if (was) glide(el, was);
+    else if (el.classList.contains('under')) return;  // uncovered in a pile: it was there all along
+    else if (el.closest('#hand')) { if (prev.deck) reveal(el, prev.deck); }  // you drew from the deck
+    else if (prev.back) reveal(el, prev.back);  // the bot played a card from its hidden hand
+  });
+  const deck = document.querySelector('#middle .deck .back');
+  if (deck && +deck.textContent < prev.deckCount && S.bot_hand_count > prev.botCount) toBotHand(prev.deck);
 }
 
 function showRoundOver() {
@@ -381,7 +489,7 @@ async function act(a) {
     S = await api('/api/action', { action: a });
     selected = null;
     $('hint').innerHTML = '';
-    render();
+    render(true);
     runBot();
   } catch (e) { $('err').textContent = e.message; }
 }
@@ -394,13 +502,17 @@ async function runBot() {
     while (S.turn === 'bot' && !S.round_over) {
       await sleep(550);
       S = await api('/api/bot', {});
-      render();
+      render(true);
     }
   } finally { busy = false; }
 }
 
 $('btn-new').onclick = openNew;
-$('btn-hint').onclick = async () => {
+$('btn-help').onclick = () => tour(0);
+$('btn-hint').onclick = showHint;
+async function showHint() {
+  store.set('lc.hintUsed', '1');
+  $('btn-hint').classList.remove('pulse');
   const h = await api('/api/hint');
   const box = $('hint');
   if (!h.options || !h.options.length) { box.innerHTML = '<p class="muted">Not available for this bot.</p>'; return; }
@@ -408,9 +520,88 @@ $('btn-hint').onclick = async () => {
     <div class="hint-row"><div>${o.text}<div class="bar" style="width:${Math.max(4, o.prob * 100)}%"></div></div>
     <div style="text-align:right">${Math.round(o.prob * 100)}%</div></div>`).join('')}</div>
     <p class="muted">The bot expects you to finish the round ${h.value >= 0 ? 'ahead' : 'behind'} by ~${Math.abs(h.value)} pts.</p>`;
+  const r = box.closest('.panel').getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) box.closest('.panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// localStorage can be missing or blocked (private windows); the page works without it
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-(async () => { S = await api('/api/state'); render(); runBot(); })();
+// --- guided tour: on the first visit, and from "How to play" ---
+const TOUR = [
+  { title: 'Welcome!', text: 'This bot learned Lost Cities by playing against itself, over and over, with the same recipe as AlphaGo: a neural network plus a look-ahead search. Normal rules; the best total after the rounds wins.' },
+  { target: () => [$('my-cols'), $('hand')], title: 'Play a card', text: 'Click a card in your hand, then click its column to play it, or its discard pile to throw it away.' },
+  { target: () => [$('middle')], title: 'Draw a card', text: 'Then take the top card of the deck or of any discard pile. The card you just drew is marked NEW.' },
+  { target: () => [$('btn-hint').closest('.panel')], title: 'Stuck? Ask the bot', text: 'It shows what it would play in your place, and whether it thinks you’ll win the round. You can also use “Ask the bot” next to the instructions.' },
+];
+let tourAt = -1;
+
+function tour(i) {
+  if (i < 0 || i >= TOUR.length) return endTour();
+  if (tourAt < 0) {
+    const box = document.createElement('div');
+    box.id = 'tour'; box.className = 'tour';
+    box.innerHTML = '<div class="tour-spot"></div>';
+    document.body.appendChild(box);
+    addEventListener('resize', placeTour); addEventListener('scroll', placeTour, true); addEventListener('keydown', tourKeys);
+  }
+  tourAt = i;
+  const step = TOUR[i], last = i === TOUR.length - 1;
+  $('tour').querySelector('.tour-tip')?.remove();
+  const tip = document.createElement('div');
+  tip.className = 'tour-tip'; tip.setAttribute('role', 'dialog');
+  tip.innerHTML = `<div class="step">${i + 1} of ${TOUR.length}</div><h3>${step.title}</h3><p>${step.text}</p>
+    <div class="tour-nav"><button class="skip" id="tour-skip">${last ? '' : 'Skip'}</button>
+    ${i ? '<button id="tour-back">Back</button>' : ''}<button class="primary" id="tour-next">${last ? 'Let’s play' : 'Next'}</button></div>`;
+  $('tour').appendChild(tip);
+  $('tour-skip').onclick = endTour;
+  if (i) $('tour-back').onclick = () => tour(i - 1);
+  $('tour-next').onclick = () => tour(i + 1);
+  $('tour-next').focus();
+  const els = step.target ? step.target() : [];
+  if (els.length) els[els.length - 1].scrollIntoView({ block: 'center', behavior: 'instant' });
+  placeTour();
+}
+
+function endTour() {
+  $('tour')?.remove();
+  tourAt = -1;
+  removeEventListener('resize', placeTour); removeEventListener('scroll', placeTour, true); removeEventListener('keydown', tourKeys);
+  store.set('lc.tourDone', '1');
+}
+
+function tourKeys(e) {
+  if (e.key === 'Escape') endTour();
+  else if (e.key === 'ArrowRight') tour(tourAt + 1);
+  else if (e.key === 'ArrowLeft' && tourAt > 0) tour(tourAt - 1);
+}
+
+// spotlight around the step's target (nothing to point at: dim everything) and the tip below or above it
+function placeTour() {
+  const box = $('tour');
+  if (!box) return;
+  const spot = box.querySelector('.tour-spot'), tip = box.querySelector('.tour-tip');
+  const els = TOUR[tourAt].target ? TOUR[tourAt].target() : [], vw = innerWidth, vh = innerHeight, pad = 8, gap = 12;
+  let r = { left: vw / 2, right: vw / 2, top: vh / 2, bottom: vh / 2 };
+  if (els.length) {
+    const rs = els.map(e => e.getBoundingClientRect());
+    r = { left: Math.min(...rs.map(x => x.left)) - pad, right: Math.max(...rs.map(x => x.right)) + pad,
+          top: Math.min(...rs.map(x => x.top)) - pad, bottom: Math.max(...rs.map(x => x.bottom)) + pad };
+  }
+  Object.assign(spot.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.right - r.left}px`, height: `${r.bottom - r.top}px` });
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  const top = !els.length ? (vh - th) / 2
+    : r.bottom + gap + th <= vh - 16 ? r.bottom + gap
+    : r.top - gap - th >= 16 ? r.top - gap - th
+    : vh - th - 16;
+  const left = Math.max(16, Math.min(vw - tw - 16, (r.left + r.right) / 2 - tw / 2));
+  Object.assign(tip.style, { left: `${left}px`, top: `${top}px` });
+}
+
+(async () => { S = await api('/api/state'); render(); runBot(); if (!store.get('lc.tourDone')) tour(0); })();
 </script>
 </body>
 </html>
