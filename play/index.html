@@ -141,8 +141,8 @@
   #btn-hint { width: 100%; }
   #btn-hint.pulse:not(:disabled) { animation: pulse 1.8s ease-out infinite; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
-  .status .ask { border: none; background: none; padding: 0 0 0 10px; color: var(--accent); font-weight: 600; }
-  .status .ask:hover { text-decoration: underline; }
+  .status button { border: none; background: none; padding: 0 0 0 10px; color: var(--accent); font-weight: 600; }
+  .status button:hover { text-decoration: underline; }
 
   /* guided tour: a spotlight that slides between parts of the table, with a tip next to it */
   .tour { position: fixed; inset: 0; z-index: 20; }
@@ -233,7 +233,7 @@
 <script>
 const COLOR_NAMES = ['Yellow', 'Blue', 'White', 'Green', 'Red'];
 const PLAY = 0, DISCARD = 60, DRAW_DECK = 120, DRAW_DISCARD = 121;
-let S = null, selected = null, busy = false;
+let S = null, selected = null, busy = false, lastPlayed = null;
 const $ = id => document.getElementById(id);
 
 async function api(path, body) {
@@ -350,8 +350,11 @@ function render(animate = false) {
     ? `${selected.value ? COLOR_NAMES[selected.color] + ' ' + selected.value : COLOR_NAMES[selected.color] + ' wager'}: <span class="sub">click your expedition to play it, or its pile to discard it</span>`
     : 'Your turn: <span class="sub">pick a card from your hand</span>';
   else st = 'Now draw: <span class="sub">from the deck or a discard pile</span>';
-  if (myTurn) st += `<button class="ask" id="ask">${$('btn-hint').querySelector('.icon').outerHTML}Ask the bot</button>`;
+  const canUndo = myTurn && S.can_undo;
+  if (canUndo) st += `<button id="undo" title="Take back your last card: you can until you draw (Ctrl+Z)">${UNDO_ICON}Undo</button>`;
+  if (myTurn) st += `<button id="ask">${$('btn-hint').querySelector('.icon').outerHTML}Ask the bot</button>`;
   $('status').innerHTML = st;
+  if (canUndo) $('undo').onclick = undo;
   if (myTurn) $('ask').onclick = showHint;
   $('btn-hint').disabled = !myTurn;
   $('btn-hint').classList.toggle('pulse', !store.get('lc.hintUsed'));
@@ -487,12 +490,29 @@ async function act(a) {
   $('err').textContent = '';
   try {
     S = await api('/api/action', { action: a });
+    if (a < DRAW_DECK) lastPlayed = a % DISCARD;
     selected = null;
     $('hint').innerHTML = '';
     render(true);
     runBot();
   } catch (e) { $('err').textContent = e.message; }
 }
+
+// take back a play or discard (only offered before you draw): the card goes back to your hand, still selected
+const UNDO_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+async function undo() {
+  if (busy || !S.can_undo) return;
+  $('err').textContent = '';
+  try {
+    S = await api('/api/undo', {});
+    selected = S.hand.find(c => c.id === lastPlayed) || null;
+    $('hint').innerHTML = '';
+    render(true);
+  } catch (e) { $('err').textContent = e.message; }
+}
+addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && S && S.can_undo && !$('tour')) { e.preventDefault(); undo(); }
+});
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function runBot() {
@@ -533,7 +553,7 @@ const store = {
 // --- guided tour: on the first visit, and from "How to play" ---
 const TOUR = [
   { title: 'Welcome!', text: 'This bot learned Lost Cities by playing against itself, over and over, with the same recipe as AlphaGo: a neural network plus a look-ahead search. Normal rules; the best total after the rounds wins.' },
-  { target: () => [$('my-cols'), $('hand')], title: 'Play a card', text: 'Click a card in your hand, then click its column to play it, or its discard pile to throw it away.' },
+  { target: () => [$('my-cols'), $('hand')], title: 'Play a card', text: 'Click a card in your hand, then click its column to play it, or its discard pile to throw it away. Misclicked? You can undo it until you draw.' },
   { target: () => [$('middle')], title: 'Draw a card', text: 'Then take the top card of the deck or of any discard pile. The card you just drew is marked NEW.' },
   { target: () => [$('btn-hint').closest('.panel')], title: 'Stuck? Ask the bot', text: 'It shows what it would play in your place, and whether it thinks you’ll win the round. You can also use “Ask the bot” next to the instructions.' },
 ];

@@ -124,6 +124,7 @@ class Match:
         self.first = HUMAN if human_starts else BOT
         self.log = []
         self.last_drawn = None
+        self.undo = None  # how things were before your last play/discard, until you draw
         self.new_round()
 
     def new_round(self):
@@ -134,6 +135,7 @@ class Match:
         self.record = {"start": self.state.clone(), "actions": []}
         self.log.append(f"— Round {self.round}: {'you go' if starter == HUMAN else 'the bot goes'} first —")
         self.last_drawn = None
+        self.undo = None
 
     def canonical(self, a: int) -> int:
         """Same-color wagers are interchangeable: map to the one the engine accepts."""
@@ -153,6 +155,8 @@ class Match:
         s = self.state
         p = s.current
         before = set(s.hands[p])
+        # a play or discard reveals nothing, so you can take it back until you draw
+        self.undo = (s.clone(), len(self.log), self.last_drawn) if p == HUMAN and a < DRAW_DECK else None
         self.record["actions"].append([p, a])
         s.step(a)
         drawn = next(iter(set(s.hands[p]) - before), None) if a >= DRAW_DECK else None
@@ -192,6 +196,14 @@ class Match:
         if a not in s.legal_actions():
             raise ValueError(f"illegal move: {action_text(a)}")
         self.apply(a, "You")
+
+    def undo_action(self):
+        if self.undo is None:
+            raise ValueError("nothing to undo")
+        self.state, n, self.last_drawn = self.undo
+        del self.log[n:]
+        self.record["actions"].pop()
+        self.undo = None
 
     def bot_step(self):
         s = self.state
@@ -254,6 +266,7 @@ class Match:
             ],
             "deck": len(s.deck),
             "just_discarded": s.just_discarded,
+            "can_undo": self.undo is not None,
             "legal": s.legal_actions() if s.current == HUMAN and not s.done else [],
             "log": self.log[-40:],
         }
@@ -301,6 +314,8 @@ class Handler(SimpleHTTPRequestHandler):
                                          human_starts=data.get("starts", "human") == "human")
                 elif self.path == "/api/action":
                     m.human_action(int(data["action"]))
+                elif self.path == "/api/undo":
+                    m.undo_action()
                 elif self.path == "/api/bot":
                     m.bot_step()
                 elif self.path == "/api/next_round":

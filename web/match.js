@@ -40,6 +40,7 @@ class Match {
     this.first = humanStarts ? HUMAN : BOT;
     this.log = [];
     this.lastDrawn = null;
+    this.undo = null;  // how things were before your last play/discard, until you draw
     this.newRound();
   }
 
@@ -49,6 +50,7 @@ class Match {
     this.state = LC.GameState.newGame(Math.random, starter);
     this.log.push(`— Round ${this.round}: ${starter === HUMAN ? 'you go' : 'the bot goes'} first —`);
     this.lastDrawn = null;
+    this.undo = null;
   }
 
   // same-color wagers are interchangeable: map to the one the engine accepts
@@ -64,6 +66,8 @@ class Match {
 
   apply(a, who) {
     const s = this.state, p = s.current, before = new Set(s.hands[p]);
+    // a play or discard reveals nothing, so you can take it back until you draw
+    this.undo = p === HUMAN && a < LC.DRAW_DECK ? { state: s.clone(), log: this.log.length, lastDrawn: this.lastDrawn } : null;
     s.step(a);
     const drawn = a >= LC.DRAW_DECK ? s.hands[p].find(c => !before.has(c)) ?? null : null;
     if (drawn !== null && p === HUMAN) this.lastDrawn = drawn;
@@ -82,6 +86,14 @@ class Match {
     a = this.canonical(a);
     if (!s.legalActions().includes(a)) throw new Error(`illegal move: ${actionText(a)}`);
     this.apply(a, 'You');
+  }
+
+  undoAction() {
+    if (!this.undo) throw new Error('nothing to undo');
+    this.state = this.undo.state;
+    this.log.length = this.undo.log;
+    this.lastDrawn = this.undo.lastDrawn;
+    this.undo = null;
   }
 
   async botStep() {
@@ -126,6 +138,7 @@ class Match {
       discards: s.discards.map(d => ({ top: d.length ? cardJson(d[d.length - 1]) : null, count: d.length, cards: d.map(cardJson) })),
       deck: s.deck.length,
       just_discarded: s.justDiscarded,
+      can_undo: this.undo !== null,
       legal: s.current === HUMAN && !s.done ? s.legalActions() : [],
       log: this.log.slice(-40),
     };
@@ -146,6 +159,7 @@ async function api(path, body) {
   if (path === '/api/new') {
     local.match = new Match(local.bot, local.modelName, +(body.rounds ?? 3), (body.starts ?? 'human') === 'human');
   } else if (path === '/api/action') m.humanAction(+body.action);
+  else if (path === '/api/undo') m.undoAction();
   else if (path === '/api/bot') await m.botStep();
   else if (path === '/api/next_round') { if (m.state.done && m.round < m.rounds) m.newRound(); }
   else throw new Error('not found');
